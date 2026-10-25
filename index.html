@@ -68,6 +68,7 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
 .frame { position: relative; background: var(--frame); border-radius: 6px; overflow: hidden; box-shadow: 0 6px 24px rgb(43 38 32 / 0.18); }
 .frame video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; opacity: 0; }
 .frame video.on { opacity: 1; }
+.frame canvas { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 1; display: block; }
 .empty { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 24px; }
 .empty-in { display: flex; flex-direction: column; gap: 12px; align-items: center; max-width: 30ch; }
 .empty h2 { font-family: var(--display); font-size: 24px; margin: 0; text-wrap: balance; }
@@ -104,8 +105,10 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
 .hd::after { content: ""; width: 3px; height: 22px; border-radius: 2px; background: #fff; }
 .hd.l { left: 0; border-radius: 8px 0 0 8px; }
 .hd.r { right: 0; border-radius: 0 8px 8px 0; }
-.cut { position: absolute; top: 46px; width: 22px; height: 22px; transform: translate(-50%, 0); border-radius: 6px; background: var(--splice); display: grid; place-items: center; z-index: 1; pointer-events: none; box-shadow: 0 0 0 2px var(--sheet); }
-.cut svg { width: 14px; height: 14px; stroke: var(--ink); stroke-width: 2; fill: none; }
+.cut { position: absolute; top: 16px; width: 28px; height: 28px; padding: 0; border: 0; transform: translateX(-50%); border-radius: 7px; background: var(--splice); display: grid; place-items: center; z-index: 3; cursor: pointer; box-shadow: 0 0 0 2px var(--sheet); touch-action: manipulation; }
+.cut svg { width: 15px; height: 15px; stroke: var(--ink); stroke-width: 2; fill: none; }
+.cut.on { background: var(--tape); }
+.cut.on svg { stroke: #fff; fill: #fff; }
 .drop { position: absolute; top: 22px; width: 3px; height: 72px; background: var(--splice); border-radius: 2px; transform: translateX(-50%); z-index: 4; }
 .playhead { position: absolute; left: 50%; top: 2px; bottom: 6px; width: 2px; margin-left: -1px; background: var(--ink); pointer-events: none; z-index: 5; border-radius: 1px; }
 .playhead::before { content: ""; position: absolute; top: -2px; left: -4px; width: 10px; height: 10px; border-radius: 50%; background: var(--ink); }
@@ -117,9 +120,9 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
 /* Hint and tools */
 .hint { font-size: 13px; color: var(--muted); padding-block: 2px 6px; background: var(--sheet); min-height: 1.4em; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .hint b { color: var(--tape); font-weight: 600; }
-.tools { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 0; background: var(--sheet); padding-block: 4px calc(8px + env(safe-area-inset-bottom, 0px)); border-top: 1px solid var(--rule); }
-.tool { min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 3px; border: 0; background: transparent; padding: 6px 0; cursor: pointer; font-size: 11px; font-weight: 600; border-radius: 10px; white-space: nowrap; }
-.tool svg { width: 24px; height: 24px; stroke: var(--ink); stroke-width: 1.7; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.tools { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 0; background: var(--sheet); padding-block: 4px calc(8px + env(safe-area-inset-bottom, 0px)); border-top: 1px solid var(--rule); }
+.tool { min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 3px; border: 0; background: transparent; padding: 6px 0; cursor: pointer; font-size: 10.5px; font-weight: 600; border-radius: 10px; white-space: nowrap; }
+.tool svg { width: 23px; height: 23px; stroke: var(--ink); stroke-width: 1.7; fill: none; stroke-linecap: round; stroke-linejoin: round; }
 .tool:disabled { opacity: 0.3; cursor: default; }
 .tool.danger svg { stroke: var(--warn); }
 .tool.on { background: var(--tape-soft); color: var(--tape); }
@@ -144,6 +147,29 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
 .note { font-size: 13px; color: var(--muted); margin: 0; }
 .note.err { color: var(--warn); }
 .result { width: 100%; max-width: 100%; max-height: 46vh; border-radius: 10px; background: var(--frame); }
+.opts.five { grid-template-columns: repeat(5, minmax(0,1fr)); }
+.opts.two { grid-template-columns: repeat(2, minmax(0,1fr)); }
+.sw { display: block; width: 40px; height: 26px; border-radius: 5px; border: 1px solid var(--rule); }
+.sw.cut-s { background: linear-gradient(90deg, var(--tape) 50%, var(--splice) 50%); }
+.sw.cross { background: linear-gradient(90deg, var(--tape), var(--splice)); }
+.sw.black { background: linear-gradient(90deg, var(--tape), #000 50%, var(--splice)); }
+.sw.white { background: linear-gradient(90deg, var(--tape), #fff 50%, var(--splice)); }
+.sw.blur { background: linear-gradient(90deg, var(--tape) 50%, var(--splice) 50%); filter: blur(3px); }
+.opt i.sw { border-width: 1px; border-color: var(--rule); }
+.opt.on i.sw { border-color: var(--tape); }
+.range-row { display: flex; align-items: center; gap: 12px; }
+.range-row input { flex: 1; min-width: 0; accent-color: var(--tape); height: 28px; }
+.range-row output { font-family: var(--mono); font-size: 14px; min-width: 3.5em; text-align: right; font-variant-numeric: tabular-nums; }
+.stamp-sample { font-size: 15px; padding: 4px 8px; border-radius: 4px; background: #3a332b; white-space: nowrap; }
+.stamp-sample.retro { font-family: var(--mono); color: #FFB23E; letter-spacing: 0.04em; }
+.stamp-sample.clean { font-family: var(--body); color: #fff; font-weight: 600; }
+.rec-list { display: flex; flex-direction: column; gap: 10px; }
+.rec { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 6px 10px; align-items: baseline; }
+.rec .nm { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 14px; }
+.rec .src { font-size: 12px; color: var(--muted); }
+.rec input { grid-column: 1 / -1; width: 100%; min-height: 40px; font: 15px var(--body); padding: 8px 10px; border: 1px solid var(--rule); border-radius: 8px; background: var(--paper); color: var(--ink); }
+.btn-row { display: flex; gap: 8px; }
+.btn-row .btn { flex: 1; }
 .stage { position: fixed; right: 0; top: 0; width: 2px; height: 2px; opacity: 0.01; pointer-events: none; }
 .file-in { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 </style>
@@ -164,17 +190,19 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
   <symbol id="i-pause" viewBox="0 0 24 24"><rect x="6" y="4" width="4.5" height="16" rx="1"/><rect x="13.5" y="4" width="4.5" height="16" rx="1"/></symbol>
   <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
   <symbol id="i-bow" viewBox="0 0 24 24"><path d="M4 5v14l8-7-8-7ZM20 5v14l-8-7 8-7Z"/></symbol>
+  <symbol id="i-fade" viewBox="0 0 24 24"><circle cx="9" cy="12" r="6"/><circle cx="15" cy="12" r="6" fill="none"/></symbol>
+  <symbol id="i-stamp" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/><path d="M12 13v3l2 1"/></symbol>
 </svg>
 
 <header class="top gut">
-  <div class="brand">Splice<b>/</b><small class="ver">v4</small></div>
+  <div class="brand">Splice<b>/</b><small class="ver">v5</small></div>
   <button class="icon-btn" id="undoBtn" type="button" aria-label="Undo" disabled><svg><use href="#i-undo"/></svg></button>
   <button class="icon-btn" id="redoBtn" type="button" aria-label="Redo" disabled><svg><use href="#i-redo"/></svg></button>
   <button class="save" id="exportBtn" type="button" disabled>Save</button>
 </header>
 
 <main class="preview" id="preview">
-  <div class="frame" id="frame"></div>
+  <div class="frame" id="frame"><canvas id="view"></canvas></div>
   <div class="empty" id="empty">
     <div class="empty-in">
       <h2>Stitch clips together</h2>
@@ -196,7 +224,7 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
   <button class="add-fab" id="fabAdd" type="button" aria-label="Add clips"><svg><use href="#i-plus"/></svg></button>
 </section>
 
-<div class="hint gut" id="hint">Tap a clip to trim it. Hold and drag a clip to move it.</div>
+<div class="hint gut" id="hint">Tap a clip to trim it. Tap ⋈ between clips for a transition.</div>
 
 <nav class="tools gut" id="tools">
   <button class="tool" type="button" id="tAdd"><svg><use href="#i-add"/></svg>Add</button>
@@ -206,6 +234,7 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
   <button class="tool" type="button" id="tDup"><svg><use href="#i-dup"/></svg>Copy</button>
   <button class="tool danger" type="button" id="tDel"><svg><use href="#i-del"/></svg>Delete</button>
   <button class="tool" type="button" id="tCanvas"><svg><use href="#i-canvas"/></svg>Canvas</button>
+  <button class="tool" type="button" id="tStamp"><svg><use href="#i-stamp"/></svg>Stamp</button>
 </nav>
 
 <input class="file-in" id="picker" type="file" accept="video/*" multiple>
@@ -218,6 +247,33 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
     <div class="opts" id="canvasOpts"></div>
     <p class="note">Clips that don't match the shape get bars, never cropped.</p>
     <button class="btn" type="button" id="canvasDone">Done</button>
+  </div></div>
+</div>
+
+<div class="scrim" id="trSheet" hidden>
+  <div class="sheet gut"><div class="sheet-in">
+    <h3 id="trTitle">Transition</h3>
+    <div class="opts five" id="trOpts"></div>
+    <span class="label">Length</span>
+    <div class="range-row"><input type="range" id="trLen" min="0.2" max="2" step="0.1" value="0.6" aria-label="Transition length"><output id="trLenOut">0.6s</output></div>
+    <div class="btn-row">
+      <button class="btn ghost-btn" type="button" id="trAll">Use on all cuts</button>
+      <button class="btn" type="button" id="trDone">Done</button>
+    </div>
+  </div></div>
+</div>
+
+<div class="scrim" id="stSheet" hidden>
+  <div class="sheet gut"><div class="sheet-in">
+    <h3>Date &amp; time stamp</h3>
+    <span class="label">Show in top-left corner</span>
+    <div class="opts" id="stShow"></div>
+    <span class="label">Style</span>
+    <div class="opts two" id="stStyle"></div>
+    <span class="label">When each clip was recorded</span>
+    <div class="rec-list" id="stList"></div>
+    <p class="note">The stamp counts forward from these times as each clip plays. Fix any that look wrong.</p>
+    <button class="btn" type="button" id="stDone">Done</button>
   </div></div>
 </div>
 
@@ -243,6 +299,8 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
   const sources = new Map();
   let clips = [], sel = null, PPS = 60, userZoom = false;
   let T = 0, playing = false, canvasChoice = 'auto';
+  let stamp = { show: 'off', style: 'retro' };
+  const newTr = () => ({ type: 'cut', d: 0.6 });
   let undoStack = [], redoStack = [];
 
   const uid = () => Math.random().toString(36).slice(2, 9);
@@ -253,9 +311,9 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
   const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 
   /* ---------- history ---------- */
-  const snap = () => ({ clips: clips.map(c => ({ ...c })), sel });
+  const snap = () => ({ clips: clips.map(c => ({ ...c, tr: { ...c.tr } })), sel });
   function commit() { undoStack.push(snap()); if (undoStack.length > 60) undoStack.shift(); redoStack = []; syncHist(); }
-  function restore(s) { clips = s.clips.map(c => ({ ...c })); sel = s.sel; T = clamp(T, 0, total()); renderAll(); }
+  function restore(s) { clips = s.clips.map(c => ({ ...c, tr: { ...c.tr } })); sel = s.sel; T = clamp(T, 0, total()); renderAll(); }
   $('undoBtn').onclick = () => { if (!undoStack.length) return; redoStack.push(snap()); restore(undoStack.pop()); syncHist(); };
   $('redoBtn').onclick = () => { if (!redoStack.length) return; undoStack.push(snap()); restore(redoStack.pop()); syncHist(); };
   function syncHist() { $('undoBtn').disabled = !undoStack.length; $('redoBtn').disabled = !redoStack.length; }
@@ -292,6 +350,9 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
         const n = clamp(Math.ceil(dur), 2, 30);
         const s = { id: uid(), url, name: file.name, dur, w: vid.videoWidth || 1080, h: vid.videoHeight || 1920, step: dur / n, thumbs: new Array(n).fill(null), vid };
         vid.addEventListener('resize', () => { if (vid.videoWidth) { s.w = vid.videoWidth; s.h = vid.videoHeight; fitFrame(); } });
+        ['seeked', 'loadeddata', 'timeupdate'].forEach(ev => vid.addEventListener(ev, markDirty));
+        s.date = null; s.dateFrom = '';
+        readRecordedAt(file).then(r => { if (r) { s.date = r.date; s.dateFrom = r.from; markDirty(); } }).catch(() => {});
         sources.set(s.id, s);
         finish(s);
       };
@@ -301,6 +362,34 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
       kick = setTimeout(() => { if (!done) nudge(vid); }, 700);
       give = setTimeout(() => { if (!done) { vid.remove(); URL.revokeObjectURL(url); finish(null); } }, 15000);
     });
+  }
+
+  // When was this clip recorded? iPhone files carry com.apple.quicktime.creationdate
+  // (local wall-clock time); other MP4/MOV files carry an mvhd creation time (UTC).
+  async function readRecordedAt(file) {
+    const size = file.size, MB = 1 << 20;
+    const parts = [new Uint8Array(await file.slice(0, Math.min(size, 2 * MB)).arrayBuffer())];
+    if (size > 2 * MB) parts.push(new Uint8Array(await file.slice(Math.max(2 * MB, size - 6 * MB), size).arrayBuffer()));
+    const dec = new TextDecoder('latin1');
+    for (const u of parts) {
+      const txt = dec.decode(u);
+      const at = txt.indexOf('com.apple.quicktime.creationdate');
+      if (at < 0) continue;
+      const m = txt.slice(at).match(/(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/);
+      if (m) return { date: new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]), from: 'video' };
+    }
+    for (const u of parts) {
+      for (let i = 0; i + 24 < u.length; i++) {
+        if (u[i] !== 0x6d || u[i + 1] !== 0x76 || u[i + 2] !== 0x68 || u[i + 3] !== 0x64) continue; // "mvhd"
+        const dv = new DataView(u.buffer, u.byteOffset + i + 4);
+        const secs = dv.getUint8(0) === 1 ? dv.getUint32(4) * 4294967296 + dv.getUint32(8) : dv.getUint32(4);
+        const ms = (secs - 2082844800) * 1000;
+        if (ms > Date.UTC(2001, 0, 1) && ms < Date.now() + 864e5) return { date: new Date(ms), from: 'video' };
+        break;
+      }
+    }
+    if (file.lastModified) return { date: new Date(file.lastModified), from: 'file' };
+    return null;
   }
 
   let thumbQueue = Promise.resolve();
@@ -348,7 +437,7 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
       hint.textContent = `Loading clip ${i + 1} of ${files.length}…`;
       const s = await addSource(f);
       if (!s) { failed.push(f.name); continue; }
-      clips.push({ id: uid(), src: s.id, in: 0, out: s.dur });
+      clips.push({ id: uid(), src: s.id, in: 0, out: s.dur, tr: newTr() });
       added++; makeThumbs(s);
       if (!userZoom) PPS = clamp(Math.round(tl.clientWidth * 1.4 / Math.max(total(), 1)), 18, 90);
       renderAll(); // show each clip as soon as it is ready
@@ -418,9 +507,13 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
       }
       clipsEl.appendChild(tile);
       if (i > 0) {
-        const cut = document.createElement('div'); cut.className = 'cut';
+        const cut = document.createElement('button'); cut.type = 'button';
+        const on = c.tr && c.tr.type !== 'cut';
+        cut.className = 'cut' + (on ? ' on' : ''); cut.dataset.cut = i;
+        if (sel && (clips[i - 1].id === sel || c.id === sel)) cut.hidden = true; // keep trim handles clear
+        cut.setAttribute('aria-label', `Transition before clip ${i + 1}: ${TR_NAMES[c.tr ? c.tr.type : 'cut']}`);
         cut.style.left = startOf(i) * PPS + 'px';
-        cut.innerHTML = '<svg><use href="#i-bow"/></svg>';
+        cut.innerHTML = `<svg><use href="#${on ? 'i-fade' : 'i-bow'}"/></svg>`;
         clipsEl.appendChild(cut);
       }
     });
@@ -455,13 +548,13 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
     $('tSplit').disabled = !has || playing;
     $('tDup').disabled = i < 0; $('tDel').disabled = i < 0;
     $('tLeft').disabled = i <= 0; $('tRight').disabled = i < 0 || i === clips.length - 1;
-    $('tCanvas').disabled = !has;
+    $('tCanvas').disabled = !has; $('tStamp').disabled = !has;
   }
 
   function updateHint() {
     const i = clips.findIndex(c => c.id === sel);
     if (!clips.length) { hint.textContent = 'Add clips to start. You can pick several at once.'; return; }
-    if (i < 0) { hint.textContent = 'Tap a clip to trim it. Hold and drag a clip to move it.'; return; }
+    if (i < 0) { hint.textContent = 'Tap a clip to trim it. Tap ⋈ between clips for a transition.'; return; }
     const c = clips[i];
     hint.innerHTML = `<b>Clip ${i + 1}</b> · ${fmt1(c.in)} → ${fmt1(c.out)} · ${fmt1(len(c))} of ${fmt1(sources.get(c.src).dur)} · drag the blue handles`;
   }
@@ -476,9 +569,116 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
     const { w, h } = frameSize();
     const aw = preview.clientWidth - 32, ah = preview.clientHeight - 24;
     const r = Math.min(aw / w, ah / h);
-    frame.style.width = Math.max(40, w * r) + 'px'; frame.style.height = Math.max(40, h * r) + 'px';
+    const fw = Math.max(40, w * r), fh = Math.max(40, h * r);
+    frame.style.width = fw + 'px'; frame.style.height = fh + 'px';
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    view.width = Math.round(fw * dpr); view.height = Math.round(fh * dpr);
+    markDirty();
   }
   new ResizeObserver(() => { fitFrame(); renderTimeline(); setScroll(T); }).observe(preview);
+
+  /* ---------- compositor: one renderer for preview and export ---------- */
+  const view = $('view'), vg = view.getContext('2d');
+  let dirty = true, viewAt = { i: 0, local: 0 };
+  function markDirty() { dirty = true; }
+  const TR_NAMES = { cut: 'Cut', cross: 'Crossfade', black: 'Fade black', white: 'Fade white', blur: 'Blur' };
+  const trLen = i => Math.max(0.1, Math.min(clips[i].tr.d, len(clips[i - 1]), len(clips[i])));
+
+  // Last frame of a clip, used for crossfades
+  const snaps = new Map();
+  const snapKey = c => c.src + '@' + c.out.toFixed(2);
+  function captureSnap(c, vid) {
+    if (!vid || !vid.videoWidth) return;
+    const r = Math.min(1, 960 / Math.max(vid.videoWidth, vid.videoHeight));
+    const cv = document.createElement('canvas'); cv.width = Math.round(vid.videoWidth * r); cv.height = Math.round(vid.videoHeight * r);
+    try { cv.getContext('2d').drawImage(vid, 0, 0, cv.width, cv.height); snaps.set(snapKey(c), cv); } catch (e) {}
+  }
+  let snapBusy = false; const snapWant = new Map();
+  function ensureSnap(c) {
+    const k = snapKey(c);
+    if (snaps.has(k)) return snaps.get(k);
+    if (!snapWant.has(k)) { snapWant.set(k, c); pumpSnaps(); }
+    return null;
+  }
+  function pumpSnaps() {
+    if (snapBusy || !snapWant.size) return;
+    const [k, c] = snapWant.entries().next().value; snapBusy = true;
+    const s = sources.get(c.src); if (!s) { snapWant.delete(k); snapBusy = false; return pumpSnaps(); }
+    const v = quietVideo(s.url); mediaBox.appendChild(v);
+    const end = () => { clearTimeout(t); snapWant.delete(k); v.remove(); snapBusy = false; markDirty(); pumpSnaps(); };
+    const t = setTimeout(end, 6000);
+    v.addEventListener('loadeddata', () => { v.currentTime = Math.max(c.in, c.out - 0.05); }, { once: true });
+    v.addEventListener('seeked', () => { captureSnap(c, v); end(); }, { once: true });
+    v.load(); setTimeout(() => nudge(v), 700);
+  }
+
+  const blurCv = document.createElement('canvas'), bgx = blurCv.getContext('2d');
+  function drawMedia(g, src, sw, sh, W, H, blur) {
+    const r = Math.min(W / sw, H / sh), dw = sw * r, dh = sh * r, x = (W - dw) / 2, y = (H - dh) / 2;
+    if (blur > 0.02) {
+      const f = 1 / (1 + 28 * blur);
+      blurCv.width = Math.max(2, Math.round(dw * f)); blurCv.height = Math.max(2, Math.round(dh * f));
+      bgx.imageSmoothingEnabled = true; bgx.imageSmoothingQuality = 'high';
+      bgx.drawImage(src, 0, 0, blurCv.width, blurCv.height);
+      g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
+      g.drawImage(blurCv, x, y, dw, dh);
+    } else g.drawImage(src, x, y, dw, dh);
+  }
+
+  const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  function stampText(c, local) {
+    const s = sources.get(c.src);
+    if (stamp.show === 'off' || !s || !s.date) return '';
+    const t = new Date(s.date.getTime() + (c.in + local) * 1000);
+    let date = `${t.getDate()} ${MON[t.getMonth()]} ${t.getFullYear()}`;
+    if (stamp.style === 'retro') date = date.toUpperCase();
+    const time = String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0');
+    return stamp.show === 'date' ? date : stamp.show === 'time' ? time : date + '   ' + time;
+  }
+  function drawStamp(g, W, H, c, local) {
+    const txt = stampText(c, local); if (!txt) return;
+    const fs = Math.max(10, Math.round(Math.min(W, H) * 0.048));
+    g.save();
+    g.textBaseline = 'top'; g.textAlign = 'left';
+    g.font = stamp.style === 'retro' ? `500 ${fs}px "IBM Plex Mono", ui-monospace, Menlo, monospace` : `600 ${fs}px "Instrument Sans", system-ui, -apple-system, sans-serif`;
+    g.shadowColor = 'rgba(0,0,0,0.55)'; g.shadowBlur = fs * 0.25; g.shadowOffsetY = fs * 0.04;
+    g.fillStyle = stamp.style === 'retro' ? '#FFB23E' : '#FFFFFF';
+    g.fillText(txt, Math.round(fs * 0.8), Math.round(fs * 0.8));
+    g.restore();
+  }
+
+  // Draw clip i at `local` seconds into it (relative to its in-point)
+  function compose(g, W, H, i, local, vid) {
+    const c = clips[i]; if (!c) return;
+    const L = len(c);
+    g.globalAlpha = 1; g.fillStyle = '#000'; g.fillRect(0, 0, W, H);
+    let blur = 0, dip = null, dipA = 0, over = null, overA = 0;
+    if (i > 0 && c.tr.type !== 'cut') {
+      const d = trLen(i), t = c.tr.type;
+      if (t === 'cross' && local < d) { over = ensureSnap(clips[i - 1]); overA = 1 - local / d; }
+      else if ((t === 'black' || t === 'white') && local < d / 2) { dip = t; dipA = 1 - local / (d / 2); }
+      else if (t === 'blur' && local < d / 2) blur = 1 - local / (d / 2);
+    }
+    const nx = clips[i + 1];
+    if (nx && nx.tr.type !== 'cut') {
+      const d = trLen(i + 1), t = nx.tr.type, rem = L - local;
+      if ((t === 'black' || t === 'white') && rem < d / 2) { dip = t; dipA = Math.max(dipA, 1 - rem / (d / 2)); }
+      else if (t === 'blur' && rem < d / 2) blur = Math.max(blur, 1 - rem / (d / 2));
+    }
+    if (vid && vid.videoWidth && vid.readyState >= 2) { try { drawMedia(g, vid, vid.videoWidth, vid.videoHeight, W, H, blur); } catch (e) {} }
+    if (over && overA > 0) { g.globalAlpha = clamp(overA, 0, 1); drawMedia(g, over, over.width, over.height, W, H, 0); g.globalAlpha = 1; }
+    if (dip) { g.globalAlpha = clamp(dipA, 0, 1); g.fillStyle = dip === 'white' ? '#fff' : '#000'; g.fillRect(0, 0, W, H); g.globalAlpha = 1; }
+    drawStamp(g, W, H, c, local);
+  }
+
+  (function previewLoop() {
+    if ((dirty || playing) && clips.length) {
+      dirty = false;
+      const c = clips[viewAt.i];
+      if (c) compose(vg, view.width, view.height, viewAt.i, viewAt.local, sources.get(c.src).vid);
+    }
+    requestAnimationFrame(previewLoop);
+  })();
 
   let activeVid = null;
   function activate(vid) {
@@ -491,6 +691,7 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
     const s = sources.get(at.c.src);
     activate(s.vid);
     const target = exact != null ? exact : at.c.in + at.local;
+    viewAt = { i: at.i, local: target - at.c.in }; markDirty();
     if (Math.abs(s.vid.currentTime - target) > 0.03) { try { s.vid.currentTime = target; } catch (e) {} }
     $('tNow').textContent = fmt(t);
   }
@@ -508,7 +709,7 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
   }, { passive: true });
 
   /* ---------- playback ---------- */
-  let unlocked = false, playIdx = 0;
+  let unlocked = false, playIdx = 0, stopAt = null;
   function unlockAll() {
     if (unlocked) return; unlocked = true;
     for (const s of sources.values()) { if (s.vid === activeVid) continue; const v = s.vid; v.muted = false; const p = v.play(); if (p) p.then(() => v.pause()).catch(() => {}); }
@@ -535,21 +736,26 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
     const s = sources.get(c.src);
     const local = s.vid.currentTime - c.in;
     T = startOf(playIdx) + clamp(local, 0, len(c));
+    viewAt = { i: playIdx, local: clamp(local, 0, len(c)) };
     setScroll(T); $('tNow').textContent = fmt(T);
+    if (stopAt != null && T >= stopAt) { stopPlay(); return; }
     if (s.vid.currentTime >= c.out - 0.04 || s.vid.ended) {
+      captureSnap(c, s.vid);
       s.vid.pause(); playIdx++;
       if (playIdx >= clips.length) { T = total(); stopPlay(); return; }
       playClip(playIdx, clips[playIdx].in);
     }
     requestAnimationFrame(tick);
   }
-  function stopPlay() { playing = false; if (activeVid) activeVid.pause(); setPlayIcon(); updateTools(); }
+  function stopPlay() { playing = false; stopAt = null; markDirty(); if (activeVid) activeVid.pause(); setPlayIcon(); updateTools(); }
   $('playBtn').onclick = () => playing ? stopPlay() : startPlay();
 
   /* ---------- selecting, trimming, reordering ---------- */
   let trim = null, drag = null, suppressClick = false;
 
   clipsEl.addEventListener('click', e => {
+    const cutBtn = e.target.closest('.cut');
+    if (cutBtn) { openTransition(+cutBtn.dataset.cut); return; }
     if (suppressClick) { suppressClick = false; return; }
     const tile = e.target.closest('.tile'); if (!tile || e.target.closest('.hd')) return;
     const c = clips[+tile.dataset.i];
@@ -691,12 +897,12 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
     const c = at.c, cutAt = c.in + at.local;
     if (cutAt - c.in < MIN || c.out - cutAt < MIN) { hint.textContent = 'Move the playhead further into the clip to split it.'; return; }
     commit();
-    const b = { id: uid(), src: c.src, in: cutAt, out: c.out };
+    const b = { id: uid(), src: c.src, in: cutAt, out: c.out, tr: newTr() };
     c.out = cutAt; clips.splice(at.i + 1, 0, b); sel = b.id; renderAll();
   };
   $('tDup').onclick = () => {
     const i = clips.findIndex(c => c.id === sel); if (i < 0) return;
-    commit(); const d = { ...clips[i], id: uid() }; clips.splice(i + 1, 0, d); sel = d.id; renderAll();
+    commit(); const d = { ...clips[i], id: uid(), tr: { ...clips[i].tr } }; clips.splice(i + 1, 0, d); sel = d.id; renderAll();
   };
   $('tDel').onclick = () => {
     const i = clips.findIndex(c => c.id === sel); if (i < 0) return;
@@ -721,6 +927,75 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
   $('canvasOpts').onclick = e => { const b = e.target.closest('.opt'); if (!b) return; canvasChoice = b.dataset.v; renderCanvasOpts(); fitFrame(); };
   $('canvasDone').onclick = () => $('canvasSheet').hidden = true;
   $('canvasSheet').onclick = e => { if (e.target === $('canvasSheet')) $('canvasSheet').hidden = true; };
+
+  // Transition sheet
+  let trIdx = 0, trCommitted = false;
+  const TR_ORDER = ['cut', 'cross', 'black', 'white', 'blur'];
+  function renderTrOpts() {
+    const c = clips[trIdx];
+    $('trOpts').innerHTML = TR_ORDER.map(t => `<button type="button" class="opt${c.tr.type === t ? ' on' : ''}" data-t="${t}"><i class="sw ${t === 'cut' ? 'cut-s' : t}"></i>${TR_NAMES[t]}</button>`).join('');
+    $('trLen').value = c.tr.d; $('trLenOut').textContent = (+c.tr.d).toFixed(1) + 's';
+    $('trLen').disabled = c.tr.type === 'cut';
+    $('trTitle').textContent = `Transition: clip ${trIdx} → ${trIdx + 1}`;
+  }
+  function openTransition(i) {
+    if (!clips[i] || i < 1) return;
+    if (playing) stopPlay();
+    trIdx = i; trCommitted = false; renderTrOpts(); $('trSheet').hidden = false;
+  }
+  function trChange(fn) { if (!trCommitted) { commit(); trCommitted = true; } fn(); renderTrOpts(); renderTimeline(); markDirty(); }
+  function previewCut(i) {
+    if (playing) stopPlay();
+    const at = startOf(i), d = clips[i].tr.type === 'cut' ? 0.6 : trLen(i);
+    T = Math.max(0, at - Math.max(0.9, d)); stopAt = Math.min(total(), at + Math.max(0.9, d));
+    setScroll(T); showFrame(T);
+    startPlay().then(() => { stopAt = Math.min(total(), at + Math.max(0.9, d)); });
+  }
+  $('trOpts').onclick = e => {
+    const b = e.target.closest('.opt'); if (!b) return;
+    trChange(() => { clips[trIdx].tr.type = b.dataset.t; });
+    if (b.dataset.t !== 'cut') previewCut(trIdx);
+  };
+  $('trLen').addEventListener('input', () => trChange(() => { clips[trIdx].tr.d = +$('trLen').value; }));
+  $('trLen').addEventListener('change', () => previewCut(trIdx));
+  $('trAll').onclick = () => {
+    const t = { ...clips[trIdx].tr };
+    trChange(() => { clips.forEach((c, k) => { if (k > 0) c.tr = { ...t }; }); });
+    $('trAll').textContent = 'Used on all cuts'; setTimeout(() => $('trAll').textContent = 'Use on all cuts', 1500);
+  };
+  const closeTr = () => { $('trSheet').hidden = true; renderTimeline(); };
+  $('trDone').onclick = closeTr;
+  $('trSheet').onclick = e => { if (e.target === $('trSheet')) closeTr(); };
+
+  // Stamp sheet
+  const SHOW = [['off', 'Off'], ['date', 'Date'], ['time', 'Time'], ['both', 'Both']];
+  const pad2 = n => String(n).padStart(2, '0');
+  const toLocalInput = d => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
+  function fromLocalInput(v) { const m = v.match(/(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?/); return m ? new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0)) : null; }
+  function renderStamp() {
+    $('stShow').innerHTML = SHOW.map(([v, l]) => `<button type="button" class="opt${stamp.show === v ? ' on' : ''}" data-v="${v}">${l}</button>`).join('');
+    const ex = { retro: '25 OCT 2026  16:01', clean: '25 Oct 2026  16:01' };
+    $('stStyle').innerHTML = ['retro', 'clean'].map(v => `<button type="button" class="opt${stamp.style === v ? ' on' : ''}" data-v="${v}"><span class="stamp-sample ${v}">${ex[v]}</span>${v === 'retro' ? 'Camcorder' : 'Clean'}</button>`).join('');
+    const seen = new Set(), rows = [];
+    clips.forEach(c => { if (seen.has(c.src)) return; seen.add(c.src); rows.push(sources.get(c.src)); });
+    $('stList').innerHTML = '';
+    rows.forEach(s => {
+      const row = document.createElement('div'); row.className = 'rec';
+      row.innerHTML = `<div class="nm"></div><div class="src"></div><input type="datetime-local" step="1">`;
+      row.querySelector('.nm').textContent = s.name;
+      row.querySelector('.src').textContent = s.dateFrom === 'video' ? 'From the video' : s.dateFrom === 'file' ? 'From the file date, check it' : s.dateFrom === 'you' ? 'Set by you' : 'Not found, set it';
+      const inp = row.querySelector('input'); inp.id = 'rec-' + s.id;
+      if (s.date) inp.value = toLocalInput(s.date);
+      inp.addEventListener('change', () => { const d = fromLocalInput(inp.value); if (d) { s.date = d; s.dateFrom = 'you'; row.querySelector('.src').textContent = 'Set by you'; markDirty(); } });
+      $('stList').appendChild(row);
+    });
+  }
+  $('tStamp').onclick = () => { if (playing) stopPlay(); renderStamp(); $('stSheet').hidden = false; };
+  $('stShow').onclick = e => { const b = e.target.closest('.opt'); if (!b) return; stamp.show = b.dataset.v; renderStamp(); markDirty(); };
+  $('stStyle').onclick = e => { const b = e.target.closest('.opt'); if (!b) return; stamp.style = b.dataset.v; renderStamp(); markDirty(); };
+  $('stDone').onclick = () => $('stSheet').hidden = true;
+  $('stSheet').onclick = e => { if (e.target === $('stSheet')) $('stSheet').hidden = true; };
+  if (document.fonts) { document.fonts.load('500 20px "IBM Plex Mono"').then(markDirty).catch(() => {}); document.fonts.load('600 20px "Instrument Sans"').then(markDirty).catch(() => {}); }
 
   /* ---------- export ---------- */
   const stage = $('stage');
@@ -773,15 +1048,13 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
     catch (e) { exUI('err'); exNote.textContent = 'This browser couldn’t start recording.'; return; }
     const chunks = []; rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
     const stopped = new Promise(r => rec.onstop = r);
-    const tot = total() || 1; let done = 0, drawing = true;
+    const tot = total() || 1; let done = 0, drawing = true, curI = 0;
+    try { if (document.fonts) await document.fonts.ready; } catch (e) {}
 
     const draw = () => {
       if (!drawing) return;
-      if (stage.readyState >= 2 && stage.videoWidth) {
-        const r = Math.min(W / stage.videoWidth, H / stage.videoHeight), dw = stage.videoWidth * r, dh = stage.videoHeight * r;
-        g.fillStyle = '#000'; g.fillRect(0, 0, W, H);
-        g.drawImage(stage, (W - dw) / 2, (H - dh) / 2, dw, dh);
-      }
+      const c = clips[curI];
+      if (c) compose(g, W, H, curI, clamp(stage.currentTime - c.in, 0, len(c)), stage);
       requestAnimationFrame(draw);
     };
 
@@ -799,6 +1072,7 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
         stage.muted = !dest;
         await stage.play();
         await new Promise(r => setTimeout(r, 50));
+        curI = i;
         if (i === 0) { draw(); rec.start(1000); } else if (rec.state === 'paused') rec.resume();
         await new Promise(r => {
           const watch = () => {
@@ -809,6 +1083,7 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
           };
           watch();
         });
+        captureSnap(c, stage); // exact last frame for a crossfade into the next clip
         if (rec.state === 'recording') rec.pause();
         stage.pause(); done += len(c);
       }
@@ -859,7 +1134,7 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
   window.addEventListener('unhandledrejection', e => { const m = e.reason && (e.reason.message || e.reason.name); if (m) { hint.textContent = 'Something broke: ' + m; hint.classList.add('err'); } });
 
   // Read-only view of the edit, used by the test script
-  window.__splice = { get clips() { return clips.map(c => ({ name: sources.get(c.src).name, in: +c.in.toFixed(2), out: +c.out.toFixed(2) })); }, get sel() { return clips.findIndex(c => c.id === sel); }, get T() { return T; }, get PPS() { return PPS; } };
+  window.__splice = { get clips() { return clips.map(c => ({ name: sources.get(c.src).name, in: +c.in.toFixed(2), out: +c.out.toFixed(2), tr: c.tr.type, date: sources.get(c.src).date ? sources.get(c.src).date.toString() : null })); }, get stamp() { return stamp; }, get sel() { return clips.findIndex(c => c.id === sel); }, get T() { return T; }, get PPS() { return PPS; } };
 
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => {}); });

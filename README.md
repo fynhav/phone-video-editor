@@ -17,6 +17,8 @@ A small video editor for your phone. Trim clips, put them in order, and stitch t
 - **Trim**: tap a clip, then drag the blue handles at either end.
 - **Move**: hold a clip and drag it, or use the Earlier / Later buttons.
 - **Split** cuts the clip under the playhead. **Copy** and **Delete** act on the selected clip.
+- **Transitions**: tap the ⋈ marker between two clips. Choose Cut, Crossfade, Fade black, Fade white or Blur, and set the length. *Use on all cuts* copies it everywhere.
+- **Stamp** burns the date, time or both into the top-left corner, in a camcorder or clean style. It reads when each clip was recorded from the video itself, and you can correct any time in the same sheet.
 - **Canvas** sets the frame shape: original, 9:16, 1:1 or 16:9. Clips that don't match get bars, never cropped.
 - **Save** joins the clips into one MP4. On iPhone, choose **Save Video** in the share sheet to put it in Photos.
 
