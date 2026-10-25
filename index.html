@@ -5,12 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <title>Splice</title>
 <meta name="description" content="Trim, reorder and stitch video clips on your phone. Works offline; nothing is uploaded.">
-<meta name="theme-color" content="#F6F0E5">
-<meta name="color-scheme" content="light">
+<meta name="theme-color" content="#1A1A1D">
+<meta name="color-scheme" content="dark">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Splice">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon-192.png" type="image/png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -23,21 +23,25 @@ img { max-width: 100%; }
 [hidden] { display: none !important; }
 /* Layout: one-screen editor. Top bar, preview frame, transport, scrolling filmstrip with centre playhead, tool row. Single warm light look by choice. */
 :root {
-  --paper: #F6F0E5;
-  --well: #ECE4D6;
-  --sheet: #FFFCF6;
-  --ink: #2B2620;
-  --muted: #857A6A;
-  --rule: #DDD2C0;
-  --tape: #2E52B8;
-  --tape-soft: #DFE6F7;
+  /* Dark editing room: neutral greys so footage colour reads true, pure black behind the picture */
+  --paper: #121214;
+  --well: #000000;
+  --sheet: #1A1A1D;
+  --ink: #F1EFEB;
+  --muted: #8F8C87;
+  --rule: #2D2D31;
+  --tape: #5A80FF;
+  --tape-soft: #1C2647;
   --splice: #E7A44B;
-  --warn: #A5521B;
-  --frame: #191613;
+  --warn: #F0884A;
+  --ok: #4CC27A;
+  --frame: #000000;
+  --chip: #2A2A2E;
+  --shade: 0 0 0;
   --display: "Familjen Grotesk", "Helvetica Neue", Arial, sans-serif;
   --body: "Instrument Sans", system-ui, -apple-system, sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
-  color-scheme: light;
+  color-scheme: dark;
 }
 html, body { height: 100%; background: var(--paper); color: var(--ink); }
 body {
@@ -65,7 +69,7 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
 
 /* Preview */
 .preview { min-width: 0; background: var(--well); display: grid; place-items: center; min-height: 0; position: relative; overflow: hidden; }
-.frame { position: relative; background: var(--frame); border-radius: 6px; overflow: hidden; box-shadow: 0 6px 24px rgb(43 38 32 / 0.18); }
+.frame { position: relative; background: var(--frame); border-radius: 6px; overflow: hidden; outline: 1px solid var(--rule); box-shadow: 0 6px 24px rgb(var(--shade) / 0.18); }
 .frame video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; opacity: 0; }
 .frame video.on { opacity: 1; }
 .frame video { will-change: filter; }
@@ -105,7 +109,7 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
 .tile { position: relative; height: 100%; flex: none; border-radius: 8px; overflow: hidden; background: var(--frame); box-shadow: inset 0 0 0 1.5px var(--sheet); touch-action: pan-x; }
 .strip { position: absolute; top: 0; bottom: 0; display: flex; pointer-events: none; }
 .strip img, .strip b { height: 100%; object-fit: cover; flex: none; display: block; -webkit-user-drag: none; user-select: none; }
-.strip b { background: #3a332b; }
+.strip b { background: var(--chip); }
 .tile.sel .dur { left: 28px; }
 .dur { position: absolute; left: 6px; top: 4px; font-family: var(--mono); font-size: 11px; font-weight: 500; color: #fff; text-shadow: 0 1px 2px rgb(0 0 0 / 0.7); pointer-events: none; }
 .tile.sel { box-shadow: inset 0 0 0 3px var(--tape); z-index: 2; }
@@ -121,9 +125,9 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
 .drop { position: absolute; top: 22px; width: 3px; height: 72px; background: var(--splice); border-radius: 2px; transform: translateX(-50%); z-index: 4; }
 .playhead { position: absolute; left: 50%; top: 2px; bottom: 6px; width: 2px; margin-left: -1px; background: var(--ink); pointer-events: none; z-index: 5; border-radius: 1px; }
 .playhead::before { content: ""; position: absolute; top: -2px; left: -4px; width: 10px; height: 10px; border-radius: 50%; background: var(--ink); }
-.add-fab { position: absolute; right: max(12px, env(safe-area-inset-right, 0px)); top: 44px; width: 44px; height: 44px; border-radius: 50%; border: 0; background: var(--ink); color: var(--sheet); display: grid; place-items: center; cursor: pointer; z-index: 6; box-shadow: 0 4px 12px rgb(43 38 32 / 0.25); }
+.add-fab { position: absolute; right: max(12px, env(safe-area-inset-right, 0px)); top: 44px; width: 44px; height: 44px; border-radius: 50%; border: 0; background: var(--ink); color: var(--sheet); display: grid; place-items: center; cursor: pointer; z-index: 6; box-shadow: 0 4px 12px rgb(var(--shade) / 0.25); }
 .add-fab svg { width: 22px; height: 22px; stroke: currentColor; stroke-width: 2.2; fill: none; stroke-linecap: round; }
-.ghost { position: fixed; z-index: 50; height: 60px; border-radius: 8px; overflow: hidden; box-shadow: 0 10px 28px rgb(43 38 32 / 0.35), inset 0 0 0 2.5px var(--splice); pointer-events: none; transform: translate(-50%, -70%) scale(1.06); background: var(--frame); }
+.ghost { position: fixed; z-index: 50; height: 60px; border-radius: 8px; overflow: hidden; box-shadow: 0 10px 28px rgb(var(--shade) / 0.35), inset 0 0 0 2.5px var(--splice); pointer-events: none; transform: translate(-50%, -70%) scale(1.06); background: var(--frame); }
 .ghost img { height: 100%; width: 100%; object-fit: cover; }
 
 /* Hint and tools */
@@ -138,7 +142,7 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
 .tool.on svg { stroke: var(--tape); }
 
 /* Sheets */
-.scrim { position: fixed; inset: 0; background: rgb(43 38 32 / 0.35); z-index: 40; display: flex; align-items: flex-end; }
+.scrim { position: fixed; inset: 0; background: rgb(0 0 0 / 0.6); z-index: 40; display: flex; align-items: flex-end; }
 .sheet { width: 100%; background: var(--sheet); border-radius: 18px 18px 0 0; padding-top: 18px; padding-bottom: calc(18px + env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; gap: 14px; max-height: 90%; overflow-y: auto; }
 .sheet-in { max-width: 520px; width: 100%; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
 .sheet h3 { font-family: var(--display); font-size: 20px; margin: 0; }
@@ -169,7 +173,7 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
 .range-row { display: flex; align-items: center; gap: 12px; }
 .range-row input { flex: 1; min-width: 0; accent-color: var(--tape); height: 28px; }
 .range-row output { font-family: var(--mono); font-size: 14px; min-width: 3.5em; text-align: right; font-variant-numeric: tabular-nums; }
-.stamp-sample { font-size: 15px; padding: 4px 8px; border-radius: 4px; background: #3a332b; white-space: nowrap; }
+.stamp-sample { font-size: 15px; padding: 4px 8px; border-radius: 4px; background: var(--chip); white-space: nowrap; }
 .stamp-sample.retro { font-family: var(--mono); color: #FFB23E; letter-spacing: 0.04em; }
 .stamp-sample.clean { font-family: var(--body); color: #fff; font-weight: 600; }
 .rec-list { display: flex; flex-direction: column; gap: 10px; }
@@ -182,7 +186,7 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
 .splash { position: fixed; inset: 0; z-index: 100; background: var(--paper); display: grid; place-items: center; padding-left: max(24px, env(safe-area-inset-left, 0px)); padding-right: max(24px, env(safe-area-inset-right, 0px)); transition: opacity 0.35s ease; }
 .splash.out { opacity: 0; pointer-events: none; }
 .splash-in { width: min(280px, 100%); display: flex; flex-direction: column; align-items: center; gap: 18px; }
-.splash-mark { width: 84px; height: 84px; border-radius: 20px; box-shadow: 0 8px 24px rgb(43 38 32 / 0.18); }
+.splash-mark { width: 84px; height: 84px; border-radius: 20px; box-shadow: 0 8px 24px rgb(var(--shade) / 0.18); }
 .splash-name { font-family: var(--display); font-weight: 700; font-size: 30px; letter-spacing: -0.01em; }
 .splash-name b { color: var(--tape); }
 .splash-bar { width: 100%; height: 6px; border-radius: 3px; background: var(--well); overflow: hidden; }
@@ -190,15 +194,15 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
 .splash-step { font-size: 13px; color: var(--muted); min-height: 1.4em; text-align: center; font-variant-numeric: tabular-nums; }
 @media (prefers-reduced-motion: reduce) { .splash, .splash-bar i { transition: none; } }
 .relink { position: absolute; inset: 0; display: grid; place-items: center; padding: 16px; z-index: 5; background: var(--well); }
-.relink-card { width: min(420px, 100%); max-height: 100%; overflow-y: auto; background: var(--sheet); border: 1px solid var(--rule); border-radius: 16px; padding: 18px; display: flex; flex-direction: column; gap: 12px; box-shadow: 0 6px 24px rgb(43 38 32 / 0.12); }
+.relink-card { width: min(420px, 100%); max-height: 100%; overflow-y: auto; background: var(--sheet); border: 1px solid var(--rule); border-radius: 16px; padding: 18px; display: flex; flex-direction: column; gap: 12px; box-shadow: 0 6px 24px rgb(var(--shade) / 0.12); }
 .relink-card h2 { font-family: var(--display); font-size: 21px; margin: 0; text-wrap: balance; }
 .relink-card p { margin: 0; color: var(--muted); font-size: 14px; }
 .need { display: flex; flex-direction: column; gap: 8px; }
 .need-row { display: grid; grid-template-columns: 56px minmax(0,1fr) auto; gap: 10px; align-items: center; }
-.need-row img, .need-row b { width: 56px; height: 40px; border-radius: 5px; object-fit: cover; background: #3a332b; display: block; }
+.need-row img, .need-row b { width: 56px; height: 40px; border-radius: 5px; object-fit: cover; background: var(--chip); display: block; }
 .need-row .nm { font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .need-row .meta { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
-.need-row .ok { font-size: 12px; font-weight: 600; color: #2F7A4B; }
+.need-row .ok { font-size: 12px; font-weight: 600; color: var(--ok); }
 .need-row .todo { font-size: 12px; font-weight: 600; color: var(--warn); }
 .tile.missing { opacity: 0.55; box-shadow: inset 0 0 0 2px var(--warn); }
 .stage { position: fixed; right: 0; top: 0; width: 2px; height: 2px; opacity: 0.01; pointer-events: none; }
@@ -237,7 +241,7 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
 </div>
 
 <header class="top gut">
-  <div class="brand">Splice<b>/</b><small class="ver">v9</small></div>
+  <div class="brand">Splice<b>/</b><small class="ver">v10</small></div>
   <button class="icon-btn" id="undoBtn" type="button" aria-label="Undo" disabled><svg><use href="#i-undo"/></svg></button>
   <button class="icon-btn" id="redoBtn" type="button" aria-label="Redo" disabled><svg><use href="#i-redo"/></svg></button>
   <button class="save" id="exportBtn" type="button" disabled>Save</button>
