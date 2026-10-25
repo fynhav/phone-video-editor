@@ -55,6 +55,8 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
 .top { display: flex; align-items: center; gap: 6px; padding-block: 8px; }
 .brand { font-family: var(--display); font-weight: 700; font-size: 20px; letter-spacing: -0.01em; margin-right: auto; }
 .brand b { color: var(--tape); }
+.ver { font-family: var(--mono); font-size: 10px; font-weight: 400; color: var(--muted); margin-left: 6px; vertical-align: middle; }
+.hint.err { color: var(--warn); }
 .icon-btn { width: 40px; height: 40px; border-radius: 10px; border: 0; background: transparent; display: grid; place-items: center; cursor: pointer; }
 .icon-btn:disabled { opacity: 0.3; cursor: default; }
 .icon-btn svg { width: 22px; height: 22px; stroke: var(--ink); fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
@@ -165,7 +167,7 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
 </svg>
 
 <header class="top gut">
-  <div class="brand">Splice<b>/</b></div>
+  <div class="brand">Splice<b>/</b><small class="ver">v3</small></div>
   <button class="icon-btn" id="undoBtn" type="button" aria-label="Undo" disabled><svg><use href="#i-undo"/></svg></button>
   <button class="icon-btn" id="redoBtn" type="button" aria-label="Redo" disabled><svg><use href="#i-redo"/></svg></button>
   <button class="save" id="exportBtn" type="button" disabled>Save</button>
@@ -259,67 +261,101 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
   function syncHist() { $('undoBtn').disabled = !undoStack.length; $('redoBtn').disabled = !redoStack.length; }
 
   /* ---------- importing ---------- */
+  // iPhone Safari only loads a video reliably when the element is in the page,
+  // was told to load(), and is sometimes nudged with a muted play(). Every wait
+  // here has a timeout so one stubborn file can never stall the app.
+  const mediaBox = document.createElement('div');
+  mediaBox.style.cssText = 'position:fixed;right:0;bottom:0;width:2px;height:2px;overflow:hidden;opacity:0.01;pointer-events:none';
+  document.body.appendChild(mediaBox);
+
+  function quietVideo(url) {
+    const v = document.createElement('video');
+    v.muted = true; v.defaultMuted = true; v.playsInline = true; v.preload = 'auto';
+    v.setAttribute('muted', ''); v.setAttribute('playsinline', ''); v.setAttribute('webkit-playsinline', '');
+    v.src = url;
+    return v;
+  }
+  function nudge(v) { try { const p = v.play(); if (p) p.then(() => v.pause()).catch(() => {}); } catch (e) {} }
+
   function addSource(file) {
     return new Promise(resolve => {
       const url = URL.createObjectURL(file);
-      const vid = document.createElement('video');
-      vid.playsInline = true; vid.preload = 'auto'; vid.src = url; vid.muted = true;
-      vid.setAttribute('playsinline', '');
-      vid.addEventListener('loadedmetadata', () => {
+      const vid = quietVideo(url);
+      frame.appendChild(vid);
+      let done = false, kick, give;
+      const finish = s => { if (done) return; done = true; clearTimeout(kick); clearTimeout(give); resolve(s); };
+      const ready = () => {
+        if (done) return;
         const dur = vid.duration;
-        if (!isFinite(dur) || !vid.videoWidth) { resolve(null); return; }
+        if (!isFinite(dur) || !(dur > 0)) return;
+        try { vid.pause(); if (vid.currentTime > 0.05) vid.currentTime = 0; } catch (e) {}
         const n = clamp(Math.ceil(dur), 2, 30);
-        const s = { id: uid(), url, name: file.name, dur, w: vid.videoWidth, h: vid.videoHeight, step: dur / n, thumbs: new Array(n).fill(null), vid };
-        frame.appendChild(vid);
+        const s = { id: uid(), url, name: file.name, dur, w: vid.videoWidth || 1080, h: vid.videoHeight || 1920, step: dur / n, thumbs: new Array(n).fill(null), vid };
+        vid.addEventListener('resize', () => { if (vid.videoWidth) { s.w = vid.videoWidth; s.h = vid.videoHeight; fitFrame(); } });
         sources.set(s.id, s);
-        resolve(s);
-      }, { once: true });
-      vid.addEventListener('error', () => resolve(null), { once: true });
+        finish(s);
+      };
+      ['loadedmetadata', 'durationchange', 'loadeddata', 'canplay'].forEach(ev => vid.addEventListener(ev, ready));
+      vid.addEventListener('error', () => { vid.remove(); finish(null); });
+      vid.load();
+      kick = setTimeout(() => { if (!done) nudge(vid); }, 700);
+      give = setTimeout(() => { if (!done) { vid.remove(); URL.revokeObjectURL(url); finish(null); } }, 15000);
     });
   }
 
   let thumbQueue = Promise.resolve();
   function makeThumbs(s) {
     thumbQueue = thumbQueue.then(() => new Promise(resolve => {
-      const p = document.createElement('video');
-      p.muted = true; p.playsInline = true; p.preload = 'auto'; p.src = s.url;
+      const p = quietVideo(s.url);
+      mediaBox.appendChild(p);
       const c = document.createElement('canvas'); c.width = 96; c.height = 96;
       const g = c.getContext('2d');
-      let k = 0;
-      const next = () => {
-        if (k >= s.thumbs.length) { p.removeAttribute('src'); p.load(); resolve(); return; }
-        p.currentTime = Math.min(s.dur - 0.05, k * s.step + 0.05);
-      };
-      p.addEventListener('seeked', () => {
+      let k = 0, started = false, stepTimer = 0;
+      const stop = () => { clearTimeout(stepTimer); try { p.pause(); p.removeAttribute('src'); p.load(); } catch (e) {} p.remove(); resolve(); };
+      const grab = () => {
+        clearTimeout(stepTimer);
         try {
-          const r = Math.max(96 / p.videoWidth, 96 / p.videoHeight);
-          const dw = p.videoWidth * r, dh = p.videoHeight * r;
-          g.drawImage(p, (96 - dw) / 2, (96 - dh) / 2, dw, dh);
-          s.thumbs[k] = c.toDataURL('image/jpeg', 0.6);
+          if (p.videoWidth) {
+            const r = Math.max(96 / p.videoWidth, 96 / p.videoHeight);
+            const dw = p.videoWidth * r, dh = p.videoHeight * r;
+            g.drawImage(p, (96 - dw) / 2, (96 - dh) / 2, dw, dh);
+            s.thumbs[k] = c.toDataURL('image/jpeg', 0.6);
+          }
         } catch (e) {}
         k++; scheduleTimeline(); next();
-      });
-      p.addEventListener('loadeddata', next, { once: true });
-      p.addEventListener('error', () => resolve(), { once: true });
+      };
+      const next = () => {
+        if (k >= s.thumbs.length) return stop();
+        stepTimer = setTimeout(grab, 2500); // a seek that never lands just skips this frame
+        try { p.currentTime = Math.min(s.dur - 0.05, k * s.step + 0.05); } catch (e) { grab(); }
+      };
+      p.addEventListener('seeked', () => { if (started) grab(); });
+      const begin = () => { if (started) return; started = true; try { p.pause(); } catch (e) {} next(); };
+      p.addEventListener('loadeddata', begin, { once: true });
+      p.addEventListener('error', stop, { once: true });
+      p.load();
+      setTimeout(() => { if (!started) nudge(p); }, 700);
+      setTimeout(() => { if (!started) stop(); }, 15000);
     }));
   }
 
   picker.addEventListener('change', async () => {
     const files = [...picker.files]; picker.value = '';
     if (!files.length) return;
-    hint.textContent = `Reading ${files.length} clip${files.length > 1 ? 's' : ''}…`;
-    const before = snap(); let added = 0;
-    for (const f of files) {
+    const before = snap(); let added = 0, failed = [];
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i];
+      hint.textContent = `Loading clip ${i + 1} of ${files.length}…`;
       const s = await addSource(f);
-      if (!s) { hint.textContent = `Couldn't read ${f.name}.`; continue; }
+      if (!s) { failed.push(f.name); continue; }
       clips.push({ id: uid(), src: s.id, in: 0, out: s.dur });
       added++; makeThumbs(s);
-    }
-    if (added) {
-      undoStack.push(before); redoStack = []; syncHist();
       if (!userZoom) PPS = clamp(Math.round(tl.clientWidth * 1.4 / Math.max(total(), 1)), 18, 90);
-      renderAll(); updateHint();
+      renderAll(); // show each clip as soon as it is ready
     }
+    if (added) { undoStack.push(before); redoStack = []; syncHist(); }
+    updateHint();
+    if (failed.length) { hint.textContent = `Couldn't open ${failed.length === 1 ? failed[0] : failed.length + ' clips'}. Try exporting it from Photos as “Most Compatible”.`; hint.classList.add('err'); setTimeout(() => hint.classList.remove('err'), 6000); }
   });
   const openPicker = () => picker.click();
   $('emptyAdd').onclick = openPicker; $('fabAdd').onclick = openPicker; $('tAdd').onclick = openPicker;
@@ -401,7 +437,7 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
 
   function renderAll() {
     const has = clips.length > 0;
-    $('empty').hidden = has; frame.hidden = !has;
+    $('empty').hidden = has; frame.style.visibility = has ? 'visible' : 'hidden';
     $('exportBtn').disabled = !has; $('playBtn').disabled = !has;
     if (sel && !clips.find(c => c.id === sel)) sel = null;
     T = clamp(T, 0, total());
@@ -817,6 +853,10 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
   };
 
   renderAll();
+
+  // Show problems on screen instead of failing silently
+  window.addEventListener('error', e => { hint.textContent = 'Something broke: ' + (e.message || 'unknown error'); hint.classList.add('err'); });
+  window.addEventListener('unhandledrejection', e => { const m = e.reason && (e.reason.message || e.reason.name); if (m) { hint.textContent = 'Something broke: ' + m; hint.classList.add('err'); } });
 
   // Read-only view of the edit, used by the test script
   window.__splice = { get clips() { return clips.map(c => ({ name: sources.get(c.src).name, in: +c.in.toFixed(2), out: +c.out.toFixed(2) })); }, get sel() { return clips.findIndex(c => c.id === sel); }, get T() { return T; }, get PPS() { return PPS; } };
