@@ -1,0 +1,828 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Splice</title>
+<meta name="description" content="Trim, reorder and stitch video clips on your phone. Works offline; nothing is uploaded.">
+<meta name="theme-color" content="#F6F0E5">
+<meta name="color-scheme" content="light">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Splice">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@500;700&family=IBM+Plex+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;600&display=swap">
+<style>
+*, *::before, *::after { box-sizing: border-box; }
+html { padding-top: env(safe-area-inset-top, 0px); }
+body { margin: 0; }
+img { max-width: 100%; }
+[hidden] { display: none !important; }
+/* Layout: one-screen editor. Top bar, preview frame, transport, scrolling filmstrip with centre playhead, tool row. Single warm light look by choice. */
+:root {
+  --paper: #F6F0E5;
+  --well: #ECE4D6;
+  --sheet: #FFFCF6;
+  --ink: #2B2620;
+  --muted: #857A6A;
+  --rule: #DDD2C0;
+  --tape: #2E52B8;
+  --tape-soft: #DFE6F7;
+  --splice: #E7A44B;
+  --warn: #A5521B;
+  --frame: #191613;
+  --display: "Familjen Grotesk", "Helvetica Neue", Arial, sans-serif;
+  --body: "Instrument Sans", system-ui, -apple-system, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  color-scheme: light;
+}
+html, body { height: 100%; background: var(--paper); color: var(--ink); }
+body {
+  font-family: var(--body); font-size: 15px; line-height: 1.4;
+  display: grid; grid-template-rows: auto minmax(0,1fr) auto auto auto auto;
+  overflow: hidden; overscroll-behavior: none;
+  -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+}
+button { font: inherit; color: inherit; }
+button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
+.gut { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+
+/* Top bar */
+.top { display: flex; align-items: center; gap: 6px; padding-block: 8px; }
+.brand { font-family: var(--display); font-weight: 700; font-size: 20px; letter-spacing: -0.01em; margin-right: auto; }
+.brand b { color: var(--tape); }
+.icon-btn { width: 40px; height: 40px; border-radius: 10px; border: 0; background: transparent; display: grid; place-items: center; cursor: pointer; }
+.icon-btn:disabled { opacity: 0.3; cursor: default; }
+.icon-btn svg { width: 22px; height: 22px; stroke: var(--ink); fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.save { border: 0; border-radius: 999px; background: var(--tape); color: #fff; font-weight: 600; padding: 9px 18px; margin-left: 6px; cursor: pointer; }
+.save:disabled { background: var(--rule); color: var(--muted); cursor: default; }
+
+/* Preview */
+.preview { background: var(--well); display: grid; place-items: center; min-height: 0; position: relative; overflow: hidden; }
+.frame { position: relative; background: var(--frame); border-radius: 6px; overflow: hidden; box-shadow: 0 6px 24px rgb(43 38 32 / 0.18); }
+.frame video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; opacity: 0; }
+.frame video.on { opacity: 1; }
+.empty { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 24px; }
+.empty-in { display: flex; flex-direction: column; gap: 12px; align-items: center; max-width: 30ch; }
+.empty h2 { font-family: var(--display); font-size: 24px; margin: 0; text-wrap: balance; }
+.empty p { margin: 0; color: var(--muted); }
+.pill { display: inline-flex; align-items: center; gap: 8px; border: 0; border-radius: 999px; background: var(--tape); color: #fff; font-weight: 600; padding: 12px 22px; cursor: pointer; font-size: 16px; }
+
+/* Transport */
+.transport { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; padding-block: 8px; background: var(--sheet); border-top: 1px solid var(--rule); }
+.tc { font-family: var(--mono); font-size: 14px; font-variant-numeric: tabular-nums; color: var(--muted); }
+.tc.r { text-align: right; }
+.tc b { color: var(--ink); font-weight: 500; }
+.play { width: 48px; height: 48px; border-radius: 50%; border: 0; background: var(--ink); display: grid; place-items: center; cursor: pointer; }
+.play svg { width: 20px; height: 20px; fill: var(--sheet); }
+.play:disabled { opacity: 0.3; }
+
+/* Timeline */
+.timeline { position: relative; background: var(--sheet); border-top: 1px solid var(--rule); padding-block: 4px 10px; }
+.tl { overflow-x: auto; overflow-y: hidden; scrollbar-width: none; -webkit-overflow-scrolling: touch; touch-action: pan-x; }
+.tl::-webkit-scrollbar { display: none; }
+.track { position: relative; height: 96px; }
+.ruler { position: absolute; top: 0; height: 22px; left: 0; right: 0; }
+.ruler span { position: absolute; top: 4px; transform: translateX(-50%); font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.ruler i { position: absolute; top: 10px; width: 4px; height: 4px; border-radius: 50%; background: var(--rule); transform: translateX(-50%); }
+.clips { position: absolute; top: 28px; height: 60px; display: flex; }
+.tile { position: relative; height: 100%; flex: none; border-radius: 8px; overflow: hidden; background: var(--frame); box-shadow: inset 0 0 0 1.5px var(--sheet); touch-action: pan-x; }
+.strip { position: absolute; top: 0; bottom: 0; display: flex; pointer-events: none; }
+.strip img, .strip b { height: 100%; object-fit: cover; flex: none; display: block; }
+.strip b { background: #3a332b; }
+.tile.sel .dur { left: 28px; }
+.dur { position: absolute; left: 6px; top: 4px; font-family: var(--mono); font-size: 11px; font-weight: 500; color: #fff; text-shadow: 0 1px 2px rgb(0 0 0 / 0.7); pointer-events: none; }
+.tile.sel { box-shadow: inset 0 0 0 3px var(--tape); z-index: 2; }
+.tile.lift { opacity: 0.35; }
+.hd { position: absolute; top: 0; bottom: 0; width: 22px; background: var(--tape); display: grid; place-items: center; touch-action: none; cursor: ew-resize; z-index: 3; }
+.hd::after { content: ""; width: 3px; height: 22px; border-radius: 2px; background: #fff; }
+.hd.l { left: 0; border-radius: 8px 0 0 8px; }
+.hd.r { right: 0; border-radius: 0 8px 8px 0; }
+.cut { position: absolute; top: 46px; width: 22px; height: 22px; transform: translate(-50%, 0); border-radius: 6px; background: var(--splice); display: grid; place-items: center; z-index: 1; pointer-events: none; box-shadow: 0 0 0 2px var(--sheet); }
+.cut svg { width: 14px; height: 14px; stroke: var(--ink); stroke-width: 2; fill: none; }
+.drop { position: absolute; top: 22px; width: 3px; height: 72px; background: var(--splice); border-radius: 2px; transform: translateX(-50%); z-index: 4; }
+.playhead { position: absolute; left: 50%; top: 2px; bottom: 6px; width: 2px; margin-left: -1px; background: var(--ink); pointer-events: none; z-index: 5; border-radius: 1px; }
+.playhead::before { content: ""; position: absolute; top: -2px; left: -4px; width: 10px; height: 10px; border-radius: 50%; background: var(--ink); }
+.add-fab { position: absolute; right: max(12px, env(safe-area-inset-right, 0px)); top: 44px; width: 44px; height: 44px; border-radius: 50%; border: 0; background: var(--ink); color: var(--sheet); display: grid; place-items: center; cursor: pointer; z-index: 6; box-shadow: 0 4px 12px rgb(43 38 32 / 0.25); }
+.add-fab svg { width: 22px; height: 22px; stroke: currentColor; stroke-width: 2.2; fill: none; stroke-linecap: round; }
+.ghost { position: fixed; z-index: 50; height: 60px; border-radius: 8px; overflow: hidden; box-shadow: 0 10px 28px rgb(43 38 32 / 0.35), inset 0 0 0 2.5px var(--splice); pointer-events: none; transform: translate(-50%, -70%) scale(1.06); background: var(--frame); }
+.ghost img { height: 100%; width: 100%; object-fit: cover; }
+
+/* Hint and tools */
+.hint { font-size: 13px; color: var(--muted); padding-block: 2px 6px; background: var(--sheet); min-height: 1.4em; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hint b { color: var(--tape); font-weight: 600; }
+.tools { display: flex; gap: 2px; overflow-x: auto; scrollbar-width: none; background: var(--sheet); padding-block: 4px calc(8px + env(safe-area-inset-bottom, 0px)); border-top: 1px solid var(--rule); }
+.tools::-webkit-scrollbar { display: none; }
+.tool { flex: none; min-width: 66px; display: flex; flex-direction: column; align-items: center; gap: 4px; border: 0; background: transparent; padding: 6px 4px; cursor: pointer; font-size: 12px; font-weight: 600; border-radius: 10px; }
+.tool svg { width: 26px; height: 26px; stroke: var(--ink); stroke-width: 1.7; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.tool:disabled { opacity: 0.3; cursor: default; }
+.tool.danger svg { stroke: var(--warn); }
+.tool.on { background: var(--tape-soft); color: var(--tape); }
+.tool.on svg { stroke: var(--tape); }
+
+/* Sheets */
+.scrim { position: fixed; inset: 0; background: rgb(43 38 32 / 0.35); z-index: 40; display: flex; align-items: flex-end; }
+.sheet { width: 100%; background: var(--sheet); border-radius: 18px 18px 0 0; padding-top: 18px; padding-bottom: calc(18px + env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; gap: 14px; max-height: 90%; overflow-y: auto; }
+.sheet-in { max-width: 520px; width: 100%; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+.sheet h3 { font-family: var(--display); font-size: 20px; margin: 0; }
+.label { font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.opts { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 8px; }
+.opt { border: 1.5px solid var(--rule); border-radius: 12px; background: var(--paper); padding: 12px 4px 8px; display: flex; flex-direction: column; align-items: center; gap: 8px; cursor: pointer; font-size: 12px; font-weight: 600; }
+.opt i { display: block; border: 2px solid var(--ink); border-radius: 3px; }
+.opt.on { border-color: var(--tape); background: var(--tape-soft); color: var(--tape); }
+.opt.on i { border-color: var(--tape); }
+.btn { border: 0; border-radius: 12px; padding: 14px 18px; font-weight: 600; font-size: 16px; background: var(--tape); color: #fff; cursor: pointer; width: 100%; }
+.btn.ghost-btn { background: transparent; color: var(--ink); border: 1.5px solid var(--rule); }
+.btn:disabled { background: var(--rule); color: var(--muted); cursor: default; }
+.progress { height: 8px; background: var(--well); border-radius: 4px; overflow: hidden; }
+.progress i { display: block; height: 100%; width: 0; background: var(--tape); }
+.note { font-size: 13px; color: var(--muted); margin: 0; }
+.note.err { color: var(--warn); }
+.result { width: 100%; max-width: 100%; max-height: 46vh; border-radius: 10px; background: var(--frame); }
+.stage { position: fixed; right: 0; top: 0; width: 2px; height: 2px; opacity: 0.01; pointer-events: none; }
+.file-in { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></symbol>
+  <symbol id="i-redo" viewBox="0 0 24 24"><path d="m15 14 5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h3"/></symbol>
+  <symbol id="i-add" viewBox="0 0 24 24"><rect x="3" y="5" width="14" height="14" rx="2"/><path d="m17 10 4-2v8l-4-2"/><path d="M10 9v6M7 12h6"/></symbol>
+  <symbol id="i-split" viewBox="0 0 24 24"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4 8.1 15.9M14.5 14.5 20 20M8.1 8.1 12 12"/></symbol>
+  <symbol id="i-dup" viewBox="0 0 24 24"><rect x="8" y="8" width="13" height="13" rx="2"/><path d="M4 16V5a1 1 0 0 1 1-1h11"/></symbol>
+  <symbol id="i-left" viewBox="0 0 24 24"><path d="M11 6 5 12l6 6"/><path d="M5 12h14"/></symbol>
+  <symbol id="i-right" viewBox="0 0 24 24"><path d="m13 6 6 6-6 6"/><path d="M19 12H5"/></symbol>
+  <symbol id="i-del" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></symbol>
+  <symbol id="i-canvas" viewBox="0 0 24 24"><path d="M6 2v16h16"/><path d="M2 6h16v16"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4.5v15a1 1 0 0 0 1.5.86l12.5-7.5a1 1 0 0 0 0-1.72L8.5 3.64A1 1 0 0 0 7 4.5Z"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><rect x="6" y="4" width="4.5" height="16" rx="1"/><rect x="13.5" y="4" width="4.5" height="16" rx="1"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-bow" viewBox="0 0 24 24"><path d="M4 5v14l8-7-8-7ZM20 5v14l-8-7 8-7Z"/></symbol>
+</svg>
+
+<header class="top gut">
+  <div class="brand">Splice<b>/</b></div>
+  <button class="icon-btn" id="undoBtn" type="button" aria-label="Undo" disabled><svg><use href="#i-undo"/></svg></button>
+  <button class="icon-btn" id="redoBtn" type="button" aria-label="Redo" disabled><svg><use href="#i-redo"/></svg></button>
+  <button class="save" id="exportBtn" type="button" disabled>Save</button>
+</header>
+
+<main class="preview" id="preview">
+  <div class="frame" id="frame"></div>
+  <div class="empty" id="empty">
+    <div class="empty-in">
+      <h2>Stitch clips together</h2>
+      <p>Pick videos from your camera roll. Trim them, put them in order, save one video. Nothing leaves your phone.</p>
+      <button class="pill" type="button" id="emptyAdd"><svg width="18" height="18" style="stroke:#fff;stroke-width:2.2;fill:none;stroke-linecap:round"><use href="#i-plus"/></svg>Add clips</button>
+    </div>
+  </div>
+</main>
+
+<section class="transport gut">
+  <div class="tc"><b id="tNow">0:00</b></div>
+  <button class="play" id="playBtn" type="button" aria-label="Play" disabled><svg><use href="#i-play" id="playIcon"/></svg></button>
+  <div class="tc r" id="tTotal">0:00</div>
+</section>
+
+<section class="timeline">
+  <div class="tl" id="tl"><div class="track" id="track"><div class="ruler" id="ruler"></div><div class="clips" id="clips"></div></div></div>
+  <div class="playhead" aria-hidden="true"></div>
+  <button class="add-fab" id="fabAdd" type="button" aria-label="Add clips"><svg><use href="#i-plus"/></svg></button>
+</section>
+
+<div class="hint gut" id="hint">Tap a clip to trim it. Hold and drag a clip to move it.</div>
+
+<nav class="tools gut" id="tools">
+  <button class="tool" type="button" id="tAdd"><svg><use href="#i-add"/></svg>Add</button>
+  <button class="tool" type="button" id="tSplit"><svg><use href="#i-split"/></svg>Split</button>
+  <button class="tool" type="button" id="tLeft"><svg><use href="#i-left"/></svg>Move</button>
+  <button class="tool" type="button" id="tRight"><svg><use href="#i-right"/></svg>Move</button>
+  <button class="tool" type="button" id="tDup"><svg><use href="#i-dup"/></svg>Duplicate</button>
+  <button class="tool danger" type="button" id="tDel"><svg><use href="#i-del"/></svg>Delete</button>
+  <button class="tool" type="button" id="tCanvas"><svg><use href="#i-canvas"/></svg>Canvas</button>
+</nav>
+
+<input class="file-in" id="picker" type="file" accept="video/*" multiple>
+<video class="stage" id="stage" playsinline preload="auto"></video>
+
+<div class="scrim" id="canvasSheet" hidden>
+  <div class="sheet gut"><div class="sheet-in">
+    <h3>Canvas</h3>
+    <span class="label">Frame shape</span>
+    <div class="opts" id="canvasOpts"></div>
+    <p class="note">Clips that don't match the shape get bars, never cropped.</p>
+    <button class="btn" type="button" id="canvasDone">Done</button>
+  </div></div>
+</div>
+
+<div class="scrim" id="exportSheet" hidden>
+  <div class="sheet gut"><div class="sheet-in">
+    <h3 id="exTitle">Joining clips</h3>
+    <div class="progress" id="exProg"><i id="exFill"></i></div>
+    <p class="note" id="exNote">Keep this screen open. Joining runs at playback speed.</p>
+    <video class="result" id="result" controls playsinline hidden></video>
+    <button class="btn" type="button" id="exSave" hidden>Save video</button>
+    <button class="btn ghost-btn" type="button" id="exClose">Cancel</button>
+  </div></div>
+</div>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const tl = $('tl'), track = $('track'), rulerEl = $('ruler'), clipsEl = $('clips');
+  const frame = $('frame'), preview = $('preview'), picker = $('picker'), hint = $('hint');
+  const MIN = 0.3;
+
+  /** sources: id -> {id,url,name,dur,w,h,step,thumbs[],vid} ; clips: [{id,src,in,out}] */
+  const sources = new Map();
+  let clips = [], sel = null, PPS = 60, userZoom = false;
+  let T = 0, playing = false, canvasChoice = 'auto';
+  let undoStack = [], redoStack = [];
+
+  const uid = () => Math.random().toString(36).slice(2, 9);
+  const len = c => c.out - c.in;
+  const total = () => clips.reduce((a, c) => a + len(c), 0);
+  const fmt = s => { s = Math.max(0, s || 0); const m = Math.floor(s / 60); return m + ':' + String(Math.floor(s % 60)).padStart(2, '0'); };
+  const fmt1 = s => (Math.round(s * 10) / 10).toFixed(1) + 's';
+  const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+
+  /* ---------- history ---------- */
+  const snap = () => ({ clips: clips.map(c => ({ ...c })), sel });
+  function commit() { undoStack.push(snap()); if (undoStack.length > 60) undoStack.shift(); redoStack = []; syncHist(); }
+  function restore(s) { clips = s.clips.map(c => ({ ...c })); sel = s.sel; T = clamp(T, 0, total()); renderAll(); }
+  $('undoBtn').onclick = () => { if (!undoStack.length) return; redoStack.push(snap()); restore(undoStack.pop()); syncHist(); };
+  $('redoBtn').onclick = () => { if (!redoStack.length) return; undoStack.push(snap()); restore(redoStack.pop()); syncHist(); };
+  function syncHist() { $('undoBtn').disabled = !undoStack.length; $('redoBtn').disabled = !redoStack.length; }
+
+  /* ---------- importing ---------- */
+  function addSource(file) {
+    return new Promise(resolve => {
+      const url = URL.createObjectURL(file);
+      const vid = document.createElement('video');
+      vid.playsInline = true; vid.preload = 'auto'; vid.src = url; vid.muted = true;
+      vid.setAttribute('playsinline', '');
+      vid.addEventListener('loadedmetadata', () => {
+        const dur = vid.duration;
+        if (!isFinite(dur) || !vid.videoWidth) { resolve(null); return; }
+        const n = clamp(Math.ceil(dur), 2, 30);
+        const s = { id: uid(), url, name: file.name, dur, w: vid.videoWidth, h: vid.videoHeight, step: dur / n, thumbs: new Array(n).fill(null), vid };
+        frame.appendChild(vid);
+        sources.set(s.id, s);
+        resolve(s);
+      }, { once: true });
+      vid.addEventListener('error', () => resolve(null), { once: true });
+    });
+  }
+
+  let thumbQueue = Promise.resolve();
+  function makeThumbs(s) {
+    thumbQueue = thumbQueue.then(() => new Promise(resolve => {
+      const p = document.createElement('video');
+      p.muted = true; p.playsInline = true; p.preload = 'auto'; p.src = s.url;
+      const c = document.createElement('canvas'); c.width = 96; c.height = 96;
+      const g = c.getContext('2d');
+      let k = 0;
+      const next = () => {
+        if (k >= s.thumbs.length) { p.removeAttribute('src'); p.load(); resolve(); return; }
+        p.currentTime = Math.min(s.dur - 0.05, k * s.step + 0.05);
+      };
+      p.addEventListener('seeked', () => {
+        try {
+          const r = Math.max(96 / p.videoWidth, 96 / p.videoHeight);
+          const dw = p.videoWidth * r, dh = p.videoHeight * r;
+          g.drawImage(p, (96 - dw) / 2, (96 - dh) / 2, dw, dh);
+          s.thumbs[k] = c.toDataURL('image/jpeg', 0.6);
+        } catch (e) {}
+        k++; scheduleTimeline(); next();
+      });
+      p.addEventListener('loadeddata', next, { once: true });
+      p.addEventListener('error', () => resolve(), { once: true });
+    }));
+  }
+
+  picker.addEventListener('change', async () => {
+    const files = [...picker.files]; picker.value = '';
+    if (!files.length) return;
+    hint.textContent = `Reading ${files.length} clip${files.length > 1 ? 's' : ''}…`;
+    const before = snap(); let added = 0;
+    for (const f of files) {
+      const s = await addSource(f);
+      if (!s) { hint.textContent = `Couldn't read ${f.name}.`; continue; }
+      clips.push({ id: uid(), src: s.id, in: 0, out: s.dur });
+      added++; makeThumbs(s);
+    }
+    if (added) {
+      undoStack.push(before); redoStack = []; syncHist();
+      if (!userZoom) PPS = clamp(Math.round(tl.clientWidth * 1.4 / Math.max(total(), 1)), 18, 90);
+      renderAll(); updateHint();
+    }
+  });
+  const openPicker = () => picker.click();
+  $('emptyAdd').onclick = openPicker; $('fabAdd').onclick = openPicker; $('tAdd').onclick = openPicker;
+
+  /* ---------- geometry ---------- */
+  const pad = () => tl.clientWidth / 2;
+  function clipAt(t) {
+    let acc = 0;
+    for (let i = 0; i < clips.length; i++) {
+      const L = len(clips[i]);
+      if (t < acc + L || i === clips.length - 1) return { i, c: clips[i], local: clamp(t - acc, 0, L), start: acc };
+      acc += L;
+    }
+    return null;
+  }
+  const startOf = idx => clips.slice(0, idx).reduce((a, c) => a + len(c), 0);
+
+  /* ---------- rendering ---------- */
+  let tlQueued = false;
+  function scheduleTimeline() { if (tlQueued) return; tlQueued = true; requestAnimationFrame(() => { tlQueued = false; if (trim || (drag && drag.active)) { tlQueued = false; return; } renderTimeline(); }); }
+
+  function renderRuler(tot, P) {
+    const steps = [1, 2, 5, 10, 15, 30, 60, 120];
+    const lab = steps.find(s => s * PPS >= 64) || 120;
+    let h = '';
+    for (let t = 0; t <= tot + lab; t += lab / 2) {
+      const x = P + t * PPS;
+      const isLab = Math.abs((t / lab) - Math.round(t / lab)) < 1e-6;
+      h += isLab ? `<span style="left:${x}px">${t >= 60 ? fmt(t) : t + 's'}</span>` : `<i style="left:${x}px"></i>`;
+    }
+    rulerEl.innerHTML = h;
+  }
+
+  function renderTimeline() {
+    const P = pad(), tot = total();
+    track.style.width = (P * 2 + tot * PPS) + 'px';
+    clipsEl.style.left = P + 'px';
+    renderRuler(tot, P);
+    clipsEl.innerHTML = '';
+    clips.forEach((c, i) => {
+      const s = sources.get(c.src);
+      const tile = document.createElement('div');
+      tile.className = 'tile' + (c.id === sel ? ' sel' : '');
+      tile.style.width = len(c) * PPS + 'px';
+      tile.dataset.i = i; tile.dataset.id = c.id;
+      const strip = document.createElement('div'); strip.className = 'strip';
+      strip.style.left = -c.in * PPS + 'px';
+      const tw = s.step * PPS;
+      for (let k = 0; k < s.thumbs.length; k++) {
+        const el = document.createElement(s.thumbs[k] ? 'img' : 'b');
+        if (s.thumbs[k]) { el.src = s.thumbs[k]; el.alt = ''; }
+        el.style.width = tw + 'px'; strip.appendChild(el);
+      }
+      tile.appendChild(strip);
+      const d = document.createElement('div'); d.className = 'dur'; d.textContent = fmt1(len(c)); tile.appendChild(d);
+      if (c.id === sel) {
+        const l = document.createElement('div'); l.className = 'hd l'; l.dataset.h = 'l';
+        const r = document.createElement('div'); r.className = 'hd r'; r.dataset.h = 'r';
+        tile.append(l, r);
+      }
+      clipsEl.appendChild(tile);
+      if (i > 0) {
+        const cut = document.createElement('div'); cut.className = 'cut';
+        cut.style.left = startOf(i) * PPS + 'px';
+        cut.innerHTML = '<svg><use href="#i-bow"/></svg>';
+        clipsEl.appendChild(cut);
+      }
+    });
+  }
+
+  function updateTrimDOM(c) {
+    const tile = clipsEl.querySelector(`.tile[data-id="${c.id}"]`); if (!tile) return;
+    tile.style.width = len(c) * PPS + 'px';
+    tile.querySelector('.strip').style.left = -c.in * PPS + 'px';
+    tile.querySelector('.dur').textContent = fmt1(len(c));
+    clipsEl.querySelectorAll('.cut').forEach((el, k) => { el.style.left = startOf(k + 1) * PPS + 'px'; });
+    track.style.width = (pad() * 2 + total() * PPS) + 'px';
+  }
+
+  function renderAll() {
+    const has = clips.length > 0;
+    $('empty').hidden = has; frame.hidden = !has;
+    $('exportBtn').disabled = !has; $('playBtn').disabled = !has;
+    if (sel && !clips.find(c => c.id === sel)) sel = null;
+    T = clamp(T, 0, total());
+    renderTimeline();
+    fitFrame();
+    setScroll(T);
+    showFrame(T);
+    updateTools(); updateHint();
+    $('tTotal').textContent = fmt(total());
+  }
+
+  function updateTools() {
+    const has = clips.length > 0;
+    const i = clips.findIndex(c => c.id === sel);
+    $('tSplit').disabled = !has || playing;
+    $('tDup').disabled = i < 0; $('tDel').disabled = i < 0;
+    $('tLeft').disabled = i <= 0; $('tRight').disabled = i < 0 || i === clips.length - 1;
+    $('tCanvas').disabled = !has;
+  }
+
+  function updateHint() {
+    const i = clips.findIndex(c => c.id === sel);
+    if (!clips.length) { hint.textContent = 'Add clips to start. You can pick several at once.'; return; }
+    if (i < 0) { hint.textContent = 'Tap a clip to trim it. Hold and drag a clip to move it.'; return; }
+    const c = clips[i];
+    hint.innerHTML = `<b>Clip ${i + 1}</b> · ${fmt1(c.in)} → ${fmt1(c.out)} · ${fmt1(len(c))} of ${fmt1(sources.get(c.src).dur)} · drag the blue handles`;
+  }
+
+  /* ---------- preview frame ---------- */
+  function frameSize() {
+    if (canvasChoice !== 'auto') { const [w, h] = canvasChoice.split('x').map(Number); return { w, h }; }
+    const s = clips[0] && sources.get(clips[0].src);
+    return s ? { w: s.w, h: s.h } : { w: 9, h: 16 };
+  }
+  function fitFrame() {
+    const { w, h } = frameSize();
+    const aw = preview.clientWidth - 32, ah = preview.clientHeight - 24;
+    const r = Math.min(aw / w, ah / h);
+    frame.style.width = Math.max(40, w * r) + 'px'; frame.style.height = Math.max(40, h * r) + 'px';
+  }
+  new ResizeObserver(() => { fitFrame(); renderTimeline(); setScroll(T); }).observe(preview);
+
+  let activeVid = null;
+  function activate(vid) {
+    if (activeVid === vid) return;
+    if (activeVid) { activeVid.classList.remove('on'); if (!activeVid.paused) activeVid.pause(); }
+    activeVid = vid; vid.classList.add('on');
+  }
+  function showFrame(t, exact) {
+    const at = clipAt(t); if (!at) return;
+    const s = sources.get(at.c.src);
+    activate(s.vid);
+    const target = exact != null ? exact : at.c.in + at.local;
+    if (Math.abs(s.vid.currentTime - target) > 0.03) { try { s.vid.currentTime = target; } catch (e) {} }
+    $('tNow').textContent = fmt(t);
+  }
+
+  /* ---------- scrolling / scrubbing ---------- */
+  let progScroll = -1;
+  function setScroll(t) { const x = Math.round(t * PPS); progScroll = x; tl.scrollLeft = x; }
+  tl.addEventListener('scroll', () => {
+    if (Math.abs(tl.scrollLeft - progScroll) < 2) return;
+    progScroll = -1;
+    if (trim) return;
+    if (playing) stopPlay();
+    T = clamp(tl.scrollLeft / PPS, 0, total());
+    showFrame(T);
+  }, { passive: true });
+
+  /* ---------- playback ---------- */
+  let unlocked = false, playIdx = 0;
+  function unlockAll() {
+    if (unlocked) return; unlocked = true;
+    for (const s of sources.values()) { if (s.vid === activeVid) continue; const v = s.vid; v.muted = false; const p = v.play(); if (p) p.then(() => v.pause()).catch(() => {}); }
+  }
+  function setPlayIcon() { $('playIcon').setAttribute('href', playing ? '#i-pause' : '#i-play'); $('playBtn').setAttribute('aria-label', playing ? 'Pause' : 'Play'); }
+  async function startPlay() {
+    if (!clips.length) return;
+    if (T >= total() - 0.05) T = 0;
+    unlockAll();
+    playing = true; setPlayIcon(); updateTools();
+    const at = clipAt(T); playIdx = at.i;
+    await playClip(playIdx, at.c.in + at.local);
+    requestAnimationFrame(tick);
+  }
+  async function playClip(i, from) {
+    const c = clips[i], s = sources.get(c.src);
+    activate(s.vid); s.vid.muted = false;
+    try { s.vid.currentTime = from; } catch (e) {}
+    try { await s.vid.play(); } catch (e) { s.vid.muted = true; try { await s.vid.play(); } catch (_) { stopPlay(); } }
+  }
+  function tick() {
+    if (!playing) return;
+    const c = clips[playIdx]; if (!c) { stopPlay(); return; }
+    const s = sources.get(c.src);
+    const local = s.vid.currentTime - c.in;
+    T = startOf(playIdx) + clamp(local, 0, len(c));
+    setScroll(T); $('tNow').textContent = fmt(T);
+    if (s.vid.currentTime >= c.out - 0.04 || s.vid.ended) {
+      s.vid.pause(); playIdx++;
+      if (playIdx >= clips.length) { T = total(); stopPlay(); return; }
+      playClip(playIdx, clips[playIdx].in);
+    }
+    requestAnimationFrame(tick);
+  }
+  function stopPlay() { playing = false; if (activeVid) activeVid.pause(); setPlayIcon(); updateTools(); }
+  $('playBtn').onclick = () => playing ? stopPlay() : startPlay();
+
+  /* ---------- selecting, trimming, reordering ---------- */
+  let trim = null, drag = null, suppressClick = false;
+
+  clipsEl.addEventListener('click', e => {
+    if (suppressClick) { suppressClick = false; return; }
+    const tile = e.target.closest('.tile'); if (!tile || e.target.closest('.hd')) return;
+    const c = clips[+tile.dataset.i];
+    sel = sel === c.id ? null : c.id;
+    if (playing) stopPlay();
+    renderTimeline(); updateTools(); updateHint();
+  });
+
+  clipsEl.addEventListener('pointerdown', e => {
+    const h = e.target.closest('.hd'); if (!h) return;
+    e.preventDefault(); e.stopPropagation();
+    const c = clips.find(x => x.id === sel); if (!c) return;
+    if (playing) stopPlay();
+    h.setPointerCapture(e.pointerId);
+    trim = { side: h.dataset.h, x0: e.clientX, in0: c.in, out0: c.out, c, before: snap(), scroll0: tl.scrollLeft, el: h };
+  });
+  window.addEventListener('pointermove', e => {
+    if (!trim) return;
+    const { c, side } = trim; const s = sources.get(c.src);
+    const dt = (e.clientX - trim.x0) / PPS;
+    if (side === 'l') {
+      const nin = clamp(trim.in0 + dt, 0, c.out - MIN);
+      c.in = nin; updateTrimDOM(c);
+      // keep the left handle under the finger
+      progScroll = Math.round(trim.scroll0 - (nin - trim.in0) * PPS); tl.scrollLeft = progScroll;
+      showFrame(T, c.in);
+    } else {
+      c.out = clamp(trim.out0 + dt, c.in + MIN, s.dur);
+      updateTrimDOM(c); showFrame(T, Math.max(c.in, c.out - 0.04));
+    }
+    $('tTotal').textContent = fmt(total()); updateHint();
+  });
+  const endTrim = () => {
+    if (!trim) return;
+    const changed = trim.c.in !== trim.in0 || trim.c.out !== trim.out0;
+    if (changed) { undoStack.push(trim.before); redoStack = []; syncHist(); }
+    trim = null; T = clamp(tl.scrollLeft / PPS, 0, total()); renderAll();
+  };
+  window.addEventListener('pointerup', endTrim); window.addEventListener('pointercancel', endTrim);
+
+  // Hold-and-drag reorder (touch and mouse)
+  let ghost = null, holdTimer = null, autoRaf = 0, dropEl = null;
+  function dragStart(x, y, tile) {
+    const i = +tile.dataset.i;
+    drag = { id: clips[i].id, from: i, x0: x, y0: y, x, y, active: false, dropIdx: i, dropX: null };
+    holdTimer = setTimeout(() => {
+      if (!drag) return;
+      drag.active = true; if (playing) stopPlay();
+      navigator.vibrate && navigator.vibrate(12);
+      const s = sources.get(clips[i].src);
+      ghost = document.createElement('div'); ghost.className = 'ghost';
+      ghost.style.width = Math.min(120, Math.max(60, len(clips[i]) * PPS)) + 'px';
+      const th = s.thumbs.find(Boolean); if (th) { const img = document.createElement('img'); img.src = th; ghost.appendChild(img); }
+      document.body.appendChild(ghost); placeGhost();
+      tile.classList.add('lift');
+      dropEl = document.createElement('div'); dropEl.className = 'drop'; dropEl.hidden = true; clipsEl.appendChild(dropEl);
+      computeDrop();
+      autoRaf = requestAnimationFrame(autoScroll);
+    }, 380);
+  }
+  function placeGhost() { if (ghost) { ghost.style.left = drag.x + 'px'; ghost.style.top = drag.y + 'px'; } }
+  function computeDrop() {
+    const tiles = [...clipsEl.querySelectorAll('.tile')];
+    let idx = 0;
+    tiles.forEach((t, k) => { if (k === drag.from) return; const r = t.getBoundingClientRect(); if (drag.x > r.left + r.width / 2) idx++; });
+    drag.dropIdx = idx;
+    // marker position in track coords, between remaining tiles
+    const order = clips.filter((_, k) => k !== drag.from);
+    let acc = 0; for (let k = 0; k < idx; k++) acc += len(order[k]);
+    // convert to the layout that still contains the dragged clip
+    const fromStart = startOf(drag.from);
+    drag.dropX = (acc >= fromStart ? acc + len(clips[drag.from]) : acc) * PPS;
+    if (idx === drag.from) drag.dropX = null;
+    if (dropEl) { dropEl.hidden = drag.dropX == null; if (drag.dropX != null) dropEl.style.left = drag.dropX + 'px'; }
+  }
+  function dragMove(x, y) {
+    if (!drag) return false;
+    drag.x = x; drag.y = y;
+    if (!drag.active) { if (Math.hypot(x - drag.x0, y - drag.y0) > 10) { clearTimeout(holdTimer); drag = null; } return false; }
+    placeGhost(); computeDrop();
+    return true;
+  }
+  function autoScroll() {
+    if (!drag || !drag.active) return;
+    const w = window.innerWidth;
+    if (drag.x < 50) tl.scrollLeft -= 8; else if (drag.x > w - 50) tl.scrollLeft += 8;
+    autoRaf = requestAnimationFrame(autoScroll);
+  }
+  function dragEnd() {
+    clearTimeout(holdTimer); cancelAnimationFrame(autoRaf);
+    if (!drag) return;
+    if (drag.active) {
+      suppressClick = true; setTimeout(() => suppressClick = false, 400);
+      if (drag.dropIdx !== drag.from) {
+        commit();
+        const [m] = clips.splice(drag.from, 1); clips.splice(drag.dropIdx, 0, m);
+        sel = m.id; T = startOf(drag.dropIdx) + 0.01;
+      }
+      ghost && ghost.remove(); ghost = null; dropEl = null; drag = null; renderAll();
+    } else drag = null;
+  }
+  clipsEl.addEventListener('touchstart', e => {
+    if (e.touches.length !== 1) return;
+    const tile = e.target.closest('.tile'); if (!tile || e.target.closest('.hd')) return;
+    dragStart(e.touches[0].clientX, e.touches[0].clientY, tile);
+  }, { passive: true });
+  window.addEventListener('touchmove', e => {
+    if (pinch && e.touches.length === 2) { e.preventDefault(); doPinch(e); return; }
+    if (!drag) return;
+    const t = e.touches[0];
+    if (dragMove(t.clientX, t.clientY)) e.preventDefault();
+  }, { passive: false });
+  window.addEventListener('touchend', () => { dragEnd(); if (pinch) endPinch(); });
+  window.addEventListener('touchcancel', () => { dragEnd(); if (pinch) endPinch(); });
+  clipsEl.addEventListener('mousedown', e => { const tile = e.target.closest('.tile'); if (!tile || e.target.closest('.hd')) return; dragStart(e.clientX, e.clientY, tile); });
+  window.addEventListener('mousemove', e => { if (drag) dragMove(e.clientX, e.clientY); });
+  window.addEventListener('mouseup', dragEnd);
+
+  // Pinch the timeline to zoom
+  let pinch = null;
+  tl.addEventListener('touchstart', e => {
+    if (e.touches.length === 2) {
+      clearTimeout(holdTimer); drag = null;
+      const [a, b] = e.touches;
+      pinch = { d0: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY), p0: PPS, t: T };
+    }
+  }, { passive: true });
+  function doPinch(e) {
+    const [a, b] = e.touches;
+    const d = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+    PPS = clamp(pinch.p0 * d / pinch.d0, 12, 260); userZoom = true;
+    renderTimeline(); setScroll(pinch.t);
+  }
+  function endPinch() { pinch = null; }
+
+  /* ---------- tools ---------- */
+  $('tSplit').onclick = () => {
+    const at = clipAt(T); if (!at) return;
+    const c = at.c, cutAt = c.in + at.local;
+    if (cutAt - c.in < MIN || c.out - cutAt < MIN) { hint.textContent = 'Move the playhead further into the clip to split it.'; return; }
+    commit();
+    const b = { id: uid(), src: c.src, in: cutAt, out: c.out };
+    c.out = cutAt; clips.splice(at.i + 1, 0, b); sel = b.id; renderAll();
+  };
+  $('tDup').onclick = () => {
+    const i = clips.findIndex(c => c.id === sel); if (i < 0) return;
+    commit(); const d = { ...clips[i], id: uid() }; clips.splice(i + 1, 0, d); sel = d.id; renderAll();
+  };
+  $('tDel').onclick = () => {
+    const i = clips.findIndex(c => c.id === sel); if (i < 0) return;
+    commit(); clips.splice(i, 1); sel = null; renderAll();
+  };
+  const move = dir => {
+    const i = clips.findIndex(c => c.id === sel), j = i + dir; if (i < 0 || j < 0 || j >= clips.length) return;
+    commit(); [clips[i], clips[j]] = [clips[j], clips[i]]; T = startOf(j) + 0.01; renderAll();
+  };
+  $('tLeft').onclick = () => move(-1); $('tRight').onclick = () => move(1);
+
+  // Canvas sheet
+  const CANVAS = [['auto', 'Original', 0, 0], ['1080x1920', '9:16', 18, 32], ['1080x1080', '1:1', 26, 26], ['1920x1080', '16:9', 32, 18]];
+  function renderCanvasOpts() {
+    const s = clips[0] && sources.get(clips[0].src);
+    $('canvasOpts').innerHTML = CANVAS.map(([v, l, w, h]) => {
+      if (v === 'auto') { const r = s ? s.w / s.h : 9 / 16; w = r > 1 ? 32 : Math.round(32 * r); h = r > 1 ? Math.round(32 / r) : 32; }
+      return `<button type="button" class="opt${canvasChoice === v ? ' on' : ''}" data-v="${v}"><i style="width:${w}px;height:${h}px"></i>${l}</button>`;
+    }).join('');
+  }
+  $('tCanvas').onclick = () => { renderCanvasOpts(); $('canvasSheet').hidden = false; };
+  $('canvasOpts').onclick = e => { const b = e.target.closest('.opt'); if (!b) return; canvasChoice = b.dataset.v; renderCanvasOpts(); fitFrame(); };
+  $('canvasDone').onclick = () => $('canvasSheet').hidden = true;
+  $('canvasSheet').onclick = e => { if (e.target === $('canvasSheet')) $('canvasSheet').hidden = true; };
+
+  /* ---------- export ---------- */
+  const stage = $('stage');
+  let audioCtx = null, dest = null, exporting = null, outBlob = null, outExt = 'mp4';
+  function pickMime() {
+    if (!window.MediaRecorder) return null;
+    const o = ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4;codecs=avc1,mp4a', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
+    for (const m of o) { try { if (MediaRecorder.isTypeSupported(m)) return m; } catch (e) {} }
+    return '';
+  }
+  const exNote = $('exNote'), exFill = $('exFill');
+  function exUI(state) {
+    $('exportSheet').hidden = false;
+    $('exProg').hidden = state !== 'run';
+    $('result').hidden = state !== 'done';
+    $('exSave').hidden = state !== 'done';
+    $('exTitle').textContent = state === 'run' ? 'Joining clips' : state === 'done' ? 'Your video' : 'Couldn’t finish';
+    $('exClose').textContent = state === 'run' ? 'Cancel' : 'Back to editing';
+    exNote.classList.toggle('err', state === 'err');
+  }
+
+  $('exportBtn').onclick = async () => {
+    if (!clips.length) return;
+    if (playing) stopPlay();
+    const mime = pickMime();
+    if (mime === null) { exUI('err'); exNote.textContent = 'This browser can’t record video. Try Safari or Chrome.'; return; }
+    exUI('run'); exFill.style.width = '0%';
+    exNote.textContent = 'Keep this screen open. Joining runs at playback speed.';
+    const job = exporting = { cancelled: false };
+    let wake = null; try { wake = await navigator.wakeLock?.request('screen'); } catch (e) {}
+
+    let { w: W, h: H } = frameSize();
+    if (canvasChoice === 'auto') { const cap = 1920 / Math.max(W, H); if (cap < 1) { W *= cap; H *= cap; } }
+    W = Math.round(W / 2) * 2; H = Math.round(H / 2) * 2;
+    const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+    const g = cv.getContext('2d'); g.fillStyle = '#000'; g.fillRect(0, 0, W, H);
+
+    try {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const src = audioCtx.createMediaElementSource(stage);
+        dest = audioCtx.createMediaStreamDestination(); src.connect(dest);
+      }
+      await audioCtx.resume();
+    } catch (e) { dest = null; }
+
+    const stream = new MediaStream([...cv.captureStream(30).getVideoTracks(), ...(dest ? dest.stream.getAudioTracks() : [])]);
+    let rec;
+    try { rec = new MediaRecorder(stream, Object.assign({ videoBitsPerSecond: 8e6, audioBitsPerSecond: 160e3 }, mime ? { mimeType: mime } : {})); }
+    catch (e) { exUI('err'); exNote.textContent = 'This browser couldn’t start recording.'; return; }
+    const chunks = []; rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+    const stopped = new Promise(r => rec.onstop = r);
+    const tot = total() || 1; let done = 0, drawing = true;
+
+    const draw = () => {
+      if (!drawing) return;
+      if (stage.readyState >= 2 && stage.videoWidth) {
+        const r = Math.min(W / stage.videoWidth, H / stage.videoHeight), dw = stage.videoWidth * r, dh = stage.videoHeight * r;
+        g.fillStyle = '#000'; g.fillRect(0, 0, W, H);
+        g.drawImage(stage, (W - dw) / 2, (H - dh) / 2, dw, dh);
+      }
+      requestAnimationFrame(draw);
+    };
+
+    try {
+      for (let i = 0; i < clips.length; i++) {
+        if (job.cancelled) throw new Error('cancel');
+        const c = clips[i], s = sources.get(c.src);
+        exNote.textContent = `Clip ${i + 1} of ${clips.length}. Keep this screen open.`;
+        if (stage.src !== s.url) {
+          stage.src = s.url;
+          await new Promise((res, rej) => { stage.onloadeddata = res; stage.onerror = rej; stage.load(); });
+        }
+        stage.currentTime = c.in;
+        await new Promise(r => { stage.onseeked = r; });
+        stage.muted = !dest;
+        await stage.play();
+        await new Promise(r => setTimeout(r, 50));
+        if (i === 0) { draw(); rec.start(1000); } else if (rec.state === 'paused') rec.resume();
+        await new Promise(r => {
+          const watch = () => {
+            if (job.cancelled) return r();
+            exFill.style.width = Math.min(100, (done + stage.currentTime - c.in) / tot * 100) + '%';
+            if (stage.currentTime >= c.out - 0.03 || stage.ended) return r();
+            requestAnimationFrame(watch);
+          };
+          watch();
+        });
+        if (rec.state === 'recording') rec.pause();
+        stage.pause(); done += len(c);
+      }
+      if (job.cancelled) throw new Error('cancel');
+      drawing = false; rec.stop(); await stopped;
+      const type = (rec.mimeType || mime || 'video/webm').split(';')[0];
+      outExt = type.includes('mp4') ? 'mp4' : 'webm';
+      outBlob = new Blob(chunks, { type });
+      $('result').src = URL.createObjectURL(outBlob);
+      exUI('done');
+      exNote.textContent = `${fmt(tot)} · ${(outBlob.size / 1048576).toFixed(1)} MB ${outExt.toUpperCase()}`;
+    } catch (e) {
+      drawing = false; try { if (rec.state !== 'inactive') rec.stop(); } catch (_) {}
+      if (job.cancelled) { $('exportSheet').hidden = true; }
+      else { exUI('err'); exNote.textContent = 'Joining stopped. If the screen locked, keep it awake and try again.'; }
+    } finally {
+      stage.pause(); try { wake && wake.release(); } catch (e) {}
+      exporting = null;
+    }
+  };
+  $('exClose').onclick = () => { if (exporting) exporting.cancelled = true; $('exportSheet').hidden = true; };
+  $('exSave').onclick = async () => {
+    if (!outBlob) return;
+    const d = new Date(), stamp = d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0') + '-' + String(d.getHours()).padStart(2, '0') + String(d.getMinutes()).padStart(2, '0');
+    const name = `splice-${stamp}.${outExt}`;
+    const file = new File([outBlob], name, { type: outBlob.type });
+    exNote.classList.remove('err');
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file] });
+        exNote.textContent = 'Done. Pick “Save Video” in the share sheet to put it in Photos.';
+        return;
+      } catch (e) {
+        if (e && e.name === 'AbortError') { exNote.textContent = 'Not saved. Tap Save video when you’re ready.'; return; }
+      }
+    }
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(outBlob); a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+    exNote.textContent = `Downloaded ${name}.`;
+  };
+
+  renderAll();
+
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => {}); });
+  }
+})();
+</script>
+</body>
+</html>
