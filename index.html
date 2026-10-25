@@ -84,6 +84,10 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
 .transport { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; padding-block: 8px; background: var(--sheet); border-top: 1px solid var(--rule); }
 .tc { font-family: var(--mono); font-size: 14px; font-variant-numeric: tabular-nums; color: var(--muted); }
 .tc.r { text-align: right; }
+.tc-right { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
+.snd { width: 40px; height: 40px; border: 0; border-radius: 10px; background: transparent; display: grid; place-items: center; cursor: pointer; }
+.snd svg { width: 22px; height: 22px; stroke: var(--ink); fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.snd.off svg { stroke: var(--muted); }
 .tc b { color: var(--ink); font-weight: 500; }
 .play { width: 48px; height: 48px; border-radius: 50%; border: 0; background: var(--ink); display: grid; place-items: center; cursor: pointer; }
 .play svg { width: 20px; height: 20px; fill: var(--sheet); }
@@ -215,6 +219,8 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
   <symbol id="i-canvas" viewBox="0 0 24 24"><path d="M6 2v16h16"/><path d="M2 6h16v16"/></symbol>
   <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4.5v15a1 1 0 0 0 1.5.86l12.5-7.5a1 1 0 0 0 0-1.72L8.5 3.64A1 1 0 0 0 7 4.5Z"/></symbol>
   <symbol id="i-pause" viewBox="0 0 24 24"><rect x="6" y="4" width="4.5" height="16" rx="1"/><rect x="13.5" y="4" width="4.5" height="16" rx="1"/></symbol>
+  <symbol id="i-snd" viewBox="0 0 24 24"><path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/></symbol>
+  <symbol id="i-snd-off" viewBox="0 0 24 24"><path d="M4 9h4l5-4v14l-5-4H4z"/><path d="m17 9 5 6M22 9l-5 6"/></symbol>
   <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
   <symbol id="i-bow" viewBox="0 0 24 24"><path d="M4 5v14l8-7-8-7ZM20 5v14l-8-7 8-7Z"/></symbol>
   <symbol id="i-fade" viewBox="0 0 24 24"><circle cx="9" cy="12" r="6"/><circle cx="15" cy="12" r="6" fill="none"/></symbol>
@@ -231,7 +237,7 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
 </div>
 
 <header class="top gut">
-  <div class="brand">Splice<b>/</b><small class="ver">v7</small></div>
+  <div class="brand">Splice<b>/</b><small class="ver">v8</small></div>
   <button class="icon-btn" id="undoBtn" type="button" aria-label="Undo" disabled><svg><use href="#i-undo"/></svg></button>
   <button class="icon-btn" id="redoBtn" type="button" aria-label="Redo" disabled><svg><use href="#i-redo"/></svg></button>
   <button class="save" id="exportBtn" type="button" disabled>Save</button>
@@ -260,7 +266,7 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
 <section class="transport gut">
   <div class="tc"><b id="tNow">0:00</b></div>
   <button class="play" id="playBtn" type="button" aria-label="Play" disabled><svg><use href="#i-play" id="playIcon"/></svg></button>
-  <div class="tc r" id="tTotal">0:00</div>
+  <div class="tc-right"><div class="tc r" id="tTotal">0:00</div><button class="snd" id="sndBtn" type="button" aria-label="Clip sound on"><svg><use href="#i-snd" id="sndIcon"/></svg></button></div>
 </section>
 
 <section class="timeline">
@@ -807,8 +813,30 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
 
   /* ---------- playback ---------- */
   let unlocked = false, playIdx = 0, stopAt = null, lastTn = '', preSeeked = null;
+  // Clip sound. iOS 17+: 'ambient' mixes with music from other apps instead of pausing it.
+  // Older iOS has no way to mix, so clip sound starts muted there and music keeps going.
+  const canMix = !!(navigator.audioSession && 'type' in navigator.audioSession);
+  function setAmbient() { try { if (canMix) navigator.audioSession.type = 'ambient'; } catch (e) {} }
+  let soundOn = canMix;
+  try { const v = localStorage.getItem('splice.sound'); if (v === '1' || v === '0') soundOn = v === '1'; } catch (e) {}
+  function syncSound() {
+    $('sndIcon').setAttribute('href', soundOn ? '#i-snd' : '#i-snd-off');
+    $('sndBtn').classList.toggle('off', !soundOn);
+    $('sndBtn').setAttribute('aria-label', soundOn ? 'Clip sound on' : 'Clip sound off');
+  }
+  $('sndBtn').onclick = () => {
+    soundOn = !soundOn; syncSound();
+    try { localStorage.setItem('splice.sound', soundOn ? '1' : '0'); } catch (e) {}
+    if (activeVid && playing) activeVid.muted = !soundOn;
+    if (soundOn) unlocked = false;
+    hint.classList.remove('err');
+    hint.textContent = soundOn ? (canMix ? 'Clip sound on. It plays over your music.' : 'Clip sound on. On this iOS version it pauses your music.') : 'Clip sound off. Your music keeps playing. Saved videos still include sound.';
+  };
+  setAmbient(); syncSound();
+
   function unlockAll() {
     if (unlocked) return; unlocked = true;
+    if (!soundOn) { unlocked = false; return; } // muted videos never take over the phone's audio
     for (const s of sources.values()) { if (!s.vid || s.vid === activeVid) continue; const v = s.vid; v.muted = false; const p = v.play(); if (p) p.then(() => v.pause()).catch(() => {}); }
   }
   function setPlayIcon() { $('playIcon').setAttribute('href', playing ? '#i-pause' : '#i-play'); $('playBtn').setAttribute('aria-label', playing ? 'Pause' : 'Play'); }
@@ -823,7 +851,7 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
   }
   async function playClip(i, from) {
     const c = clips[i], s = sources.get(c.src);
-    activate(s.vid); s.vid.muted = false;
+    activate(s.vid); s.vid.muted = !soundOn;
     if (Math.abs(s.vid.currentTime - from) > 0.05) { try { s.vid.currentTime = from; } catch (e) {} }
     try { await s.vid.play(); } catch (e) { s.vid.muted = true; try { await s.vid.play(); } catch (_) { stopPlay(); } }
   }
@@ -1139,6 +1167,7 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
     const g = cv.getContext('2d'); g.fillStyle = '#000'; g.fillRect(0, 0, W, H);
 
     try {
+      setAmbient();
       if (!audioCtx) {
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         const src = audioCtx.createMediaElementSource(stage);
