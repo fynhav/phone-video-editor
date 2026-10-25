@@ -1,5 +1,5 @@
 // Splice service worker: precache the app shell, cache fonts on first use.
-const VERSION = 'splice-v6';
+const VERSION = 'splice-v7';
 const SHELL = [
   './',
   './index.html',

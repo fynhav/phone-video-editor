@@ -175,6 +175,28 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
 .rec input { grid-column: 1 / -1; width: 100%; min-height: 40px; font: 15px var(--body); padding: 8px 10px; border: 1px solid var(--rule); border-radius: 8px; background: var(--paper); color: var(--ink); }
 .btn-row { display: flex; gap: 8px; }
 .btn-row .btn { flex: 1; }
+.splash { position: fixed; inset: 0; z-index: 100; background: var(--paper); display: grid; place-items: center; padding-left: max(24px, env(safe-area-inset-left, 0px)); padding-right: max(24px, env(safe-area-inset-right, 0px)); transition: opacity 0.35s ease; }
+.splash.out { opacity: 0; pointer-events: none; }
+.splash-in { width: min(280px, 100%); display: flex; flex-direction: column; align-items: center; gap: 18px; }
+.splash-mark { width: 84px; height: 84px; border-radius: 20px; box-shadow: 0 8px 24px rgb(43 38 32 / 0.18); }
+.splash-name { font-family: var(--display); font-weight: 700; font-size: 30px; letter-spacing: -0.01em; }
+.splash-name b { color: var(--tape); }
+.splash-bar { width: 100%; height: 6px; border-radius: 3px; background: var(--well); overflow: hidden; }
+.splash-bar i { display: block; height: 100%; width: 0; background: var(--tape); border-radius: 3px; transition: width 0.25s ease; }
+.splash-step { font-size: 13px; color: var(--muted); min-height: 1.4em; text-align: center; font-variant-numeric: tabular-nums; }
+@media (prefers-reduced-motion: reduce) { .splash, .splash-bar i { transition: none; } }
+.relink { position: absolute; inset: 0; display: grid; place-items: center; padding: 16px; z-index: 5; background: var(--well); }
+.relink-card { width: min(420px, 100%); max-height: 100%; overflow-y: auto; background: var(--sheet); border: 1px solid var(--rule); border-radius: 16px; padding: 18px; display: flex; flex-direction: column; gap: 12px; box-shadow: 0 6px 24px rgb(43 38 32 / 0.12); }
+.relink-card h2 { font-family: var(--display); font-size: 21px; margin: 0; text-wrap: balance; }
+.relink-card p { margin: 0; color: var(--muted); font-size: 14px; }
+.need { display: flex; flex-direction: column; gap: 8px; }
+.need-row { display: grid; grid-template-columns: 56px minmax(0,1fr) auto; gap: 10px; align-items: center; }
+.need-row img, .need-row b { width: 56px; height: 40px; border-radius: 5px; object-fit: cover; background: #3a332b; display: block; }
+.need-row .nm { font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.need-row .meta { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.need-row .ok { font-size: 12px; font-weight: 600; color: #2F7A4B; }
+.need-row .todo { font-size: 12px; font-weight: 600; color: var(--warn); }
+.tile.missing { opacity: 0.55; box-shadow: inset 0 0 0 2px var(--warn); }
 .stage { position: fixed; right: 0; top: 0; width: 2px; height: 2px; opacity: 0.01; pointer-events: none; }
 .file-in { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 </style>
@@ -199,8 +221,17 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
   <symbol id="i-stamp" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/><path d="M12 13v3l2 1"/></symbol>
 </svg>
 
+<div class="splash" id="splash" role="status" aria-live="polite">
+  <div class="splash-in">
+    <img class="splash-mark" src="icons/icon-192.png" alt="">
+    <div class="splash-name">Splice<b>/</b></div>
+    <div class="splash-bar"><i id="splashFill"></i></div>
+    <div class="splash-step" id="splashStep">Starting up…</div>
+  </div>
+</div>
+
 <header class="top gut">
-  <div class="brand">Splice<b>/</b><small class="ver">v6</small></div>
+  <div class="brand">Splice<b>/</b><small class="ver">v7</small></div>
   <button class="icon-btn" id="undoBtn" type="button" aria-label="Undo" disabled><svg><use href="#i-undo"/></svg></button>
   <button class="icon-btn" id="redoBtn" type="button" aria-label="Redo" disabled><svg><use href="#i-redo"/></svg></button>
   <button class="save" id="exportBtn" type="button" disabled>Save</button>
@@ -208,6 +239,15 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
 
 <main class="preview" id="preview">
   <div class="frame" id="frame"><canvas id="xf"></canvas><div id="dip"></div><div id="stampEl" hidden></div></div>
+  <div class="relink" id="relink" hidden>
+    <div class="relink-card">
+      <h2 id="rlTitle">Pick up where you left off</h2>
+      <p id="rlText">Your edit is saved, but the videos stay in your Photos. Select these clips again and Splice will put each one back in place.</p>
+      <div class="need" id="rlList"></div>
+      <button class="btn" type="button" id="rlPick">Re-select clips</button>
+      <button class="btn ghost-btn" type="button" id="rlNew">Start a new edit</button>
+    </div>
+  </div>
   <div class="empty" id="empty">
     <div class="empty-in">
       <h2>Stitch clips together</h2>
@@ -340,26 +380,20 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
   }
   function nudge(v) { try { const p = v.play(); if (p) p.then(() => v.pause()).catch(() => {}); } catch (e) {} }
 
-  function addSource(file) {
+  // Load a picked file into an in-page <video>; resolves {url, vid, dur, w, h} or null
+  function loadVideo(file) {
     return new Promise(resolve => {
       const url = URL.createObjectURL(file);
       const vid = quietVideo(url);
       frame.appendChild(vid);
       let done = false, kick, give;
-      const finish = s => { if (done) return; done = true; clearTimeout(kick); clearTimeout(give); resolve(s); };
+      const finish = r => { if (done) return; done = true; clearTimeout(kick); clearTimeout(give); resolve(r); };
       const ready = () => {
         if (done) return;
         const dur = vid.duration;
         if (!isFinite(dur) || !(dur > 0)) return;
         try { vid.pause(); if (vid.currentTime > 0.05) vid.currentTime = 0; } catch (e) {}
-        const n = clamp(Math.ceil(dur / 1.5), 2, 20);
-        const s = { id: uid(), url, name: file.name, dur, w: vid.videoWidth || 1080, h: vid.videoHeight || 1920, step: dur / n, thumbs: new Array(n).fill(null), vid };
-        vid.addEventListener('resize', () => { if (vid.videoWidth) { s.w = vid.videoWidth; s.h = vid.videoHeight; fitFrame(); } });
-        ['seeked', 'loadeddata', 'timeupdate'].forEach(ev => vid.addEventListener(ev, markDirty));
-        s.date = null; s.dateFrom = '';
-        readRecordedAt(file).then(r => { if (r) { s.date = r.date; s.dateFrom = r.from; markDirty(); } }).catch(() => {});
-        sources.set(s.id, s);
-        finish(s);
+        finish({ url, vid, dur, w: vid.videoWidth || 1080, h: vid.videoHeight || 1920 });
       };
       ['loadedmetadata', 'durationchange', 'loadeddata', 'canplay'].forEach(ev => vid.addEventListener(ev, ready));
       vid.addEventListener('error', () => { vid.remove(); finish(null); });
@@ -367,6 +401,22 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
       kick = setTimeout(() => { if (!done) nudge(vid); }, 700);
       give = setTimeout(() => { if (!done) { vid.remove(); URL.revokeObjectURL(url); finish(null); } }, 15000);
     });
+  }
+  // Wire a loaded video into a source record
+  function attachVideo(s, lv) {
+    Object.assign(s, { url: lv.url, vid: lv.vid, w: lv.w, h: lv.h, missing: false });
+    unlocked = false; // let the next Play unlock sound on this video too (iOS)
+    lv.vid.addEventListener('resize', () => { if (lv.vid.videoWidth) { s.w = lv.vid.videoWidth; s.h = lv.vid.videoHeight; fitFrame(); } });
+    ['seeked', 'loadeddata', 'timeupdate'].forEach(ev => lv.vid.addEventListener(ev, markDirty));
+  }
+  async function addSource(file) {
+    const lv = await loadVideo(file); if (!lv) return null;
+    const n = clamp(Math.ceil(lv.dur / 1.5), 2, 20);
+    const s = { id: uid(), name: file.name, size: file.size, lastModified: file.lastModified || 0, dur: lv.dur, step: lv.dur / n, thumbs: new Array(n).fill(null), date: null, dateFrom: '' };
+    attachVideo(s, lv);
+    sources.set(s.id, s);
+    readRecordedAt(file).then(r => { if (r) { s.date = r.date; s.dateFrom = r.from; markDirty(); scheduleSave(); } }).catch(() => {});
+    return s;
   }
 
   // When was this clip recorded? iPhone files carry com.apple.quicktime.creationdate
@@ -399,13 +449,14 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
 
   let thumbQueue = Promise.resolve();
   function makeThumbs(s) {
+    if (s.thumbs.every(Boolean)) return; // restored from the saved edit
     thumbQueue = thumbQueue.then(() => new Promise(resolve => {
       const p = quietVideo(s.url);
       mediaBox.appendChild(p);
       const c = document.createElement('canvas'); c.width = 96; c.height = 96;
       const g = c.getContext('2d');
       let k = 0, started = false, stepTimer = 0;
-      const stop = () => { clearTimeout(stepTimer); try { p.pause(); p.removeAttribute('src'); p.load(); } catch (e) {} p.remove(); resolve(); };
+      const stop = () => { clearTimeout(stepTimer); try { p.pause(); p.removeAttribute('src'); p.load(); } catch (e) {} p.remove(); scheduleSave(); resolve(); };
       const grab = () => {
         clearTimeout(stepTimer);
         try {
@@ -437,6 +488,7 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
   picker.addEventListener('change', async () => {
     const files = [...picker.files]; picker.value = '';
     if (!files.length) return;
+    if (relinkMode) { relinkMode = false; return relinkFiles(files); }
     const before = snap(); let added = 0, failed = [];
     for (let i = 0; i < files.length; i++) {
       const f = files[i];
@@ -452,7 +504,8 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
     updateHint();
     if (failed.length) { hint.textContent = `Couldn't open ${failed.length === 1 ? failed[0] : failed.length + ' clips'}. Try exporting it from Photos as “Most Compatible”.`; hint.classList.add('err'); setTimeout(() => hint.classList.remove('err'), 6000); }
   });
-  const openPicker = () => picker.click();
+  let relinkMode = false;
+  const openPicker = () => { relinkMode = false; picker.click(); };
   $('emptyAdd').onclick = openPicker; $('fabAdd').onclick = openPicker; $('tAdd').onclick = openPicker;
 
   /* ---------- geometry ---------- */
@@ -493,7 +546,7 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
     clips.forEach((c, i) => {
       const s = sources.get(c.src);
       const tile = document.createElement('div');
-      tile.className = 'tile' + (c.id === sel ? ' sel' : '');
+      tile.className = 'tile' + (c.id === sel ? ' sel' : '') + (s.missing ? ' missing' : '');
       tile.style.width = len(c) * PPS + 'px';
       tile.dataset.i = i; tile.dataset.id = c.id;
       const strip = document.createElement('div'); strip.className = 'strip';
@@ -534,10 +587,13 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
     track.style.width = (pad() * 2 + total() * PPS) + 'px';
   }
 
+  const missingSources = () => { const seen = new Set(), out = []; clips.forEach(c => { const s = sources.get(c.src); if (s && s.missing && !seen.has(s.id)) { seen.add(s.id); out.push(s); } }); return out; };
   function renderAll() {
-    const has = clips.length > 0;
+    const has = clips.length > 0, missing = missingSources();
     $('empty').hidden = has; frame.style.visibility = has ? 'visible' : 'hidden';
-    $('exportBtn').disabled = !has; $('playBtn').disabled = !has;
+    $('exportBtn').disabled = !has || missing.length > 0; $('playBtn').disabled = !has || missing.length > 0;
+    renderRelink(missing);
+    scheduleSave();
     if (sel && !clips.find(c => c.id === sel)) sel = null;
     T = clamp(T, 0, total());
     renderTimeline();
@@ -609,7 +665,7 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
   function pumpSnaps() {
     if (snapBusy || !snapWant.size || playing || exporting) return;
     const [k, c] = snapWant.entries().next().value; snapBusy = true;
-    const s = sources.get(c.src); if (!s) { snapWant.delete(k); snapBusy = false; return pumpSnaps(); }
+    const s = sources.get(c.src); if (!s || !s.url) { snapWant.delete(k); snapBusy = false; return pumpSnaps(); }
     const v = quietVideo(s.url); mediaBox.appendChild(v);
     const end = () => { clearTimeout(t); snapWant.delete(k); v.remove(); snapBusy = false; markDirty(); pumpSnaps(); };
     const t = setTimeout(end, 6000);
@@ -693,6 +749,7 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
     const c = clips[viewAt.i];
     if (!c) { xf.style.opacity = 0; dipEl.style.opacity = 0; stampEl.hidden = true; return; }
     const st = trState(viewAt.i, viewAt.local), vid = sources.get(c.src).vid;
+    if (!vid) return;
     const px = st.blur > 0.02 ? Math.round(st.blur * 0.05 * frameH) : 0;
     if (blurVid !== vid) { if (blurVid) blurVid.style.filter = ''; blurVid = vid; lastBlurPx = -1; }
     if (px !== lastBlurPx) { vid.style.filter = px ? `blur(${px}px)` : ''; lastBlurPx = px; }
@@ -727,9 +784,11 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
   function showFrame(t, exact) {
     const at = clipAt(t); if (!at) return;
     const s = sources.get(at.c.src);
-    activate(s.vid);
     const target = exact != null ? exact : at.c.in + at.local;
     viewAt = { i: at.i, local: target - at.c.in }; markDirty();
+    $('tNow').textContent = fmt(t);
+    if (!s.vid) return; // waiting to be re-selected
+    activate(s.vid);
     if (Math.abs(s.vid.currentTime - target) > 0.03) { try { s.vid.currentTime = target; } catch (e) {} }
     $('tNow').textContent = fmt(t);
   }
@@ -750,7 +809,7 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
   let unlocked = false, playIdx = 0, stopAt = null, lastTn = '', preSeeked = null;
   function unlockAll() {
     if (unlocked) return; unlocked = true;
-    for (const s of sources.values()) { if (s.vid === activeVid) continue; const v = s.vid; v.muted = false; const p = v.play(); if (p) p.then(() => v.pause()).catch(() => {}); }
+    for (const s of sources.values()) { if (!s.vid || s.vid === activeVid) continue; const v = s.vid; v.muted = false; const p = v.play(); if (p) p.then(() => v.pause()).catch(() => {}); }
   }
   function setPlayIcon() { $('playIcon').setAttribute('href', playing ? '#i-pause' : '#i-play'); $('playBtn').setAttribute('aria-label', playing ? 'Pause' : 'Play'); }
   async function startPlay() {
@@ -970,7 +1029,7 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
     }).join('');
   }
   $('tCanvas').onclick = () => { renderCanvasOpts(); $('canvasSheet').hidden = false; };
-  $('canvasOpts').onclick = e => { const b = e.target.closest('.opt'); if (!b) return; canvasChoice = b.dataset.v; renderCanvasOpts(); fitFrame(); };
+  $('canvasOpts').onclick = e => { const b = e.target.closest('.opt'); if (!b) return; canvasChoice = b.dataset.v; renderCanvasOpts(); fitFrame(); scheduleSave(); };
   $('canvasDone').onclick = () => $('canvasSheet').hidden = true;
   $('canvasSheet').onclick = e => { if (e.target === $('canvasSheet')) $('canvasSheet').hidden = true; };
 
@@ -989,7 +1048,7 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
     if (playing) stopPlay();
     trIdx = i; trCommitted = false; renderTrOpts(); $('trSheet').hidden = false;
   }
-  function trChange(fn) { if (!trCommitted) { commit(); trCommitted = true; } fn(); renderTrOpts(); renderTimeline(); markDirty(); prepareSnaps(); }
+  function trChange(fn) { if (!trCommitted) { commit(); trCommitted = true; } fn(); renderTrOpts(); renderTimeline(); markDirty(); prepareSnaps(); scheduleSave(); }
   function previewCut(i) {
     if (playing) stopPlay();
     const at = startOf(i), d = clips[i].tr.type === 'cut' ? 0.6 : trLen(i);
@@ -1032,13 +1091,13 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
       row.querySelector('.src').textContent = s.dateFrom === 'video' ? 'From the video' : s.dateFrom === 'file' ? 'From the file date, check it' : s.dateFrom === 'you' ? 'Set by you' : 'Not found, set it';
       const inp = row.querySelector('input'); inp.id = 'rec-' + s.id;
       if (s.date) inp.value = toLocalInput(s.date);
-      inp.addEventListener('change', () => { const d = fromLocalInput(inp.value); if (d) { s.date = d; s.dateFrom = 'you'; row.querySelector('.src').textContent = 'Set by you'; markDirty(); } });
+      inp.addEventListener('change', () => { const d = fromLocalInput(inp.value); if (d) { s.date = d; s.dateFrom = 'you'; row.querySelector('.src').textContent = 'Set by you'; markDirty(); scheduleSave(); } });
       $('stList').appendChild(row);
     });
   }
   $('tStamp').onclick = () => { if (playing) stopPlay(); renderStamp(); $('stSheet').hidden = false; };
-  $('stShow').onclick = e => { const b = e.target.closest('.opt'); if (!b) return; stamp.show = b.dataset.v; renderStamp(); markDirty(); };
-  $('stStyle').onclick = e => { const b = e.target.closest('.opt'); if (!b) return; stamp.style = b.dataset.v; renderStamp(); markDirty(); };
+  $('stShow').onclick = e => { const b = e.target.closest('.opt'); if (!b) return; stamp.show = b.dataset.v; renderStamp(); markDirty(); scheduleSave(); };
+  $('stStyle').onclick = e => { const b = e.target.closest('.opt'); if (!b) return; stamp.style = b.dataset.v; renderStamp(); markDirty(); scheduleSave(); };
   $('stDone').onclick = () => $('stSheet').hidden = true;
   $('stSheet').onclick = e => { if (e.target === $('stSheet')) $('stSheet').hidden = true; };
   if (document.fonts) { document.fonts.load('500 20px "IBM Plex Mono"').then(markDirty).catch(() => {}); document.fonts.load('600 20px "Instrument Sans"').then(markDirty).catch(() => {}); }
@@ -1180,18 +1239,148 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
     exNote.textContent = `Downloaded ${name}.`;
   };
 
-  renderAll();
+  /* ---------- saving the edit (not the videos) ---------- */
+  // The edit and small strip images go to IndexedDB on this device. Videos stay in Photos;
+  // a browser can't reopen them later on its own, so they are re-selected and matched.
+  const store = {
+    db: null,
+    open() { return this.db || (this.db = new Promise((res, rej) => { const r = indexedDB.open('splice', 1); r.onupgradeneeded = () => r.result.createObjectStore('kv'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); })); },
+    async get(k) { const d = await this.open(); return new Promise((res, rej) => { const q = d.transaction('kv').objectStore('kv').get(k); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); }); },
+    async set(k, v) { const d = await this.open(); return new Promise((res, rej) => { const t = d.transaction('kv', 'readwrite'); t.objectStore('kv').put(v, k); t.oncomplete = () => res(); t.onerror = () => rej(t.error); }); },
+    async del(k) { const d = await this.open(); return new Promise(res => { const t = d.transaction('kv', 'readwrite'); t.objectStore('kv').delete(k); t.oncomplete = () => res(); t.onerror = () => res(); }); }
+  };
+  let saveTimer = 0, restoring = true;
+  function scheduleSave() { if (restoring) return; clearTimeout(saveTimer); saveTimer = setTimeout(saveNow, 600); }
+  async function saveNow() {
+    try {
+      if (!clips.length) { await store.del('project'); return; }
+      const used = new Set(clips.map(c => c.src));
+      const srcs = [...sources.values()].filter(s => used.has(s.id)).map(s => ({
+        id: s.id, name: s.name, size: s.size || 0, lastModified: s.lastModified || 0, dur: s.dur, w: s.w, h: s.h,
+        step: s.step, thumbs: s.thumbs, date: s.date ? s.date.getTime() : null, dateFrom: s.dateFrom || ''
+      }));
+      await store.set('project', { v: 1, savedAt: Date.now(), canvasChoice, stamp: { ...stamp }, PPS, userZoom, T, clips: clips.map(c => ({ id: c.id, src: c.src, in: c.in, out: c.out, tr: { ...c.tr } })), sources: srcs });
+    } catch (e) { /* storage full or blocked: editing still works */ }
+  }
+  async function loadProject() {
+    const p = await store.get('project');
+    if (!p || !p.clips || !p.clips.length) return false;
+    p.sources.forEach(o => sources.set(o.id, { ...o, date: o.date ? new Date(o.date) : null, thumbs: o.thumbs || [], vid: null, url: null, missing: true }));
+    clips = p.clips.filter(c => sources.has(c.src)).map(c => ({ ...c, tr: { ...c.tr } }));
+    canvasChoice = p.canvasChoice || 'auto'; stamp = { ...stamp, ...(p.stamp || {}) };
+    PPS = p.PPS || PPS; userZoom = !!p.userZoom; T = p.T || 0;
+    return clips.length > 0;
+  }
+
+  const fmtDate = d => d ? `${d.getDate()} ${MON[d.getMonth()]} ${d.getFullYear()}, ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` : 'date unknown';
+  function renderRelink(missing) {
+    const box = $('relink');
+    if (!missing.length) { box.hidden = true; return; }
+    box.hidden = false;
+    const all = []; const seen = new Set();
+    clips.forEach(c => { if (!seen.has(c.src)) { seen.add(c.src); all.push(sources.get(c.src)); } });
+    const found = all.length - missing.length;
+    $('rlTitle').textContent = found ? `${missing.length} more clip${missing.length > 1 ? 's' : ''} to find` : 'Pick up where you left off';
+    $('rlText').textContent = found
+      ? 'Select the remaining clips. Order doesn’t matter.'
+      : 'Your edit is saved, but the videos stay in your Photos. Select these clips again (all at once is fine) and Splice puts each one back in place.';
+    $('rlPick').textContent = found ? 'Select remaining clips' : 'Re-select clips';
+    $('rlList').innerHTML = '';
+    all.forEach(s => {
+      const row = document.createElement('div'); row.className = 'need-row';
+      const th = s.thumbs.find(Boolean);
+      row.innerHTML = `${th ? '<img alt="">' : '<b></b>'}<div><div class="nm"></div><div class="meta"></div></div><span class="${s.missing ? 'todo' : 'ok'}">${s.missing ? 'Needed' : 'Found'}</span>`;
+      if (th) row.querySelector('img').src = th;
+      row.querySelector('.nm').textContent = s.name;
+      row.querySelector('.meta').textContent = `${fmtDate(s.date)} · ${fmt1(s.dur)}`;
+      $('rlList').appendChild(row);
+    });
+  }
+  $('rlPick').onclick = () => { relinkMode = true; picker.click(); };
+  let newArmed = 0;
+  $('rlNew').onclick = async () => {
+    if (!newArmed) { $('rlNew').textContent = 'Tap again to discard the saved edit'; newArmed = setTimeout(() => { newArmed = 0; $('rlNew').textContent = 'Start a new edit'; }, 3000); return; }
+    clearTimeout(newArmed); newArmed = 0; $('rlNew').textContent = 'Start a new edit';
+    clips = []; sources.clear(); undoStack = []; redoStack = []; syncHist(); sel = null; T = 0;
+    await store.del('project'); renderAll();
+  };
+
+  // Match re-selected files to the saved clips by length, size, name and recording date
+  async function relinkFiles(files) {
+    const before = snap(); let linked = 0, extra = 0, failed = 0;
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i];
+      hint.classList.remove('err'); hint.textContent = `Matching clip ${i + 1} of ${files.length}…`;
+      const lv = await loadVideo(f);
+      if (!lv) { failed++; continue; }
+      let rec = null; try { rec = await readRecordedAt(f); } catch (e) {}
+      let best = null, bestScore = 0;
+      for (const s of missingSources()) {
+        if (Math.abs(s.dur - lv.dur) > 0.25) continue; // length must agree
+        let score = 3;
+        if (s.size && s.size === f.size) score += 4;
+        if (s.name === f.name) score += 2;
+        if (s.date && rec && rec.from === 'video' && Math.abs(s.date - rec.date) < 2000) score += 3;
+        if (s.lastModified && s.lastModified === f.lastModified) score += 1;
+        if (score > bestScore) { best = s; bestScore = score; }
+      }
+      if (best) {
+        attachVideo(best, lv);
+        Object.assign(best, { size: f.size, lastModified: f.lastModified || 0 });
+        if (!best.date && rec) { best.date = rec.date; best.dateFrom = rec.from; }
+        makeThumbs(best); linked++;
+      } else {
+        // Not part of the saved edit: add it at the end as a new clip
+        lv.vid.remove(); URL.revokeObjectURL(lv.url);
+        const s = await addSource(f);
+        if (s) { clips.push({ id: uid(), src: s.id, in: 0, out: s.dur, tr: newTr() }); makeThumbs(s); extra++; }
+      }
+      renderAll();
+    }
+    if (extra) { undoStack.push(before); redoStack = []; syncHist(); }
+    const left = missingSources().length;
+    const bits = [];
+    if (linked) bits.push(`${linked} clip${linked > 1 ? 's' : ''} back in place`);
+    if (extra) bits.push(`${extra} new clip${extra > 1 ? 's' : ''} added at the end`);
+    if (failed) bits.push(`${failed} couldn't be opened`);
+    if (left) bits.push(`${left} still needed`);
+    hint.textContent = bits.join(' · ') || 'No clips matched.';
+    if (left || failed) hint.classList.add('err');
+    prepareSnaps();
+  }
+
+  /* ---------- start-up with a loading screen ---------- */
+  async function boot() {
+    const fill = $('splashFill'), step = $('splashStep'), t0 = performance.now();
+    const show = (pct, text) => { fill.style.width = pct + '%'; step.textContent = text; };
+    const withTimeout = (p, ms) => Promise.race([p, new Promise(r => setTimeout(r, ms))]);
+    show(15, 'Starting up…');
+    if ('serviceWorker' in navigator) { navigator.serviceWorker.register('sw.js').catch(() => {}); }
+    try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) {}
+    show(35, 'Loading fonts…');
+    if (document.fonts) { try { await withTimeout(Promise.all([document.fonts.load('600 20px "Instrument Sans"'), document.fonts.load('500 20px "IBM Plex Mono"'), document.fonts.load('700 20px "Familjen Grotesk"')]), 2500); } catch (e) {} }
+    show(60, 'Looking for your saved edit…');
+    let restored = false;
+    try { restored = await withTimeout(loadProject(), 4000); } catch (e) {}
+    if (restored) {
+      const n = new Set(clips.map(c => c.src)).size;
+      show(85, `Restoring your edit: ${clips.length} clip${clips.length > 1 ? 's' : ''}, ${fmt(total())}…`);
+    } else show(85, 'Getting the editor ready…');
+    renderAll();
+    restoring = false;
+    show(100, restored ? 'Edit restored' : 'Ready');
+    const wait = Math.max(0, 650 - (performance.now() - t0)); // long enough to read, never a long wait
+    setTimeout(() => { $('splash').classList.add('out'); setTimeout(() => $('splash').remove(), 400); }, wait);
+  }
+  boot();
 
   // Show problems on screen instead of failing silently
   window.addEventListener('error', e => { hint.textContent = 'Something broke: ' + (e.message || 'unknown error'); hint.classList.add('err'); });
   window.addEventListener('unhandledrejection', e => { const m = e.reason && (e.reason.message || e.reason.name); if (m) { hint.textContent = 'Something broke: ' + m; hint.classList.add('err'); } });
 
   // Read-only view of the edit, used by the test script
-  window.__splice = { get clips() { return clips.map(c => ({ name: sources.get(c.src).name, in: +c.in.toFixed(2), out: +c.out.toFixed(2), tr: c.tr.type, date: sources.get(c.src).date ? sources.get(c.src).date.toString() : null })); }, get stamp() { return stamp; }, get sel() { return clips.findIndex(c => c.id === sel); }, get T() { return T; }, get PPS() { return PPS; } };
+  window.__splice = { saveNow: () => saveNow(), get missing() { return missingSources().map(s => s.name); }, get canvas() { return canvasChoice; }, get clips() { return clips.map(c => ({ name: sources.get(c.src).name, in: +c.in.toFixed(2), out: +c.out.toFixed(2), tr: c.tr.type, date: sources.get(c.src).date ? sources.get(c.src).date.toString() : null })); }, get stamp() { return stamp; }, get sel() { return clips.findIndex(c => c.id === sel); }, get T() { return T; }, get PPS() { return PPS; } };
 
-  if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => {}); });
-  }
 })();
 </script>
 </body>

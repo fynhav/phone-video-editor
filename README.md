@@ -22,6 +22,12 @@ A small video editor for your phone. Trim clips, put them in order, and stitch t
 - **Canvas** sets the frame shape: original, 9:16, 1:1 or 16:9. Clips that don't match get bars, never cropped.
 - **Save** joins the clips into one MP4. On iPhone, choose **Save Video** in the share sheet to put it in Photos.
 
+## Saving your edit
+
+Splice saves your edit automatically on the phone after every change: clip order, trims, transitions, stamp, frame shape and small strip images, usually well under 1 MB. It doesn't copy your videos.
+
+A web app can't reopen videos from Photos on its own later, so when you come back Splice shows your timeline and lists the clips it needs. Tap **Re-select clips** and pick them, all at once and in any order. Each one is matched back to its place by length, size, recording date and name. Any video that isn't part of the edit is added at the end.
+
 ## Notes
 
 - Joining runs at playback speed, so a 90-second edit takes about 90 seconds. Keep the screen awake while it works.
