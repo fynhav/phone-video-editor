@@ -104,7 +104,7 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
 .clips { position: absolute; top: 28px; height: 60px; display: flex; }
 .tile { position: relative; height: 100%; flex: none; border-radius: 8px; overflow: hidden; background: var(--frame); box-shadow: inset 0 0 0 1.5px var(--sheet); touch-action: pan-x; }
 .strip { position: absolute; top: 0; bottom: 0; display: flex; pointer-events: none; }
-.strip img, .strip b { height: 100%; object-fit: cover; flex: none; display: block; }
+.strip img, .strip b { height: 100%; object-fit: cover; flex: none; display: block; -webkit-user-drag: none; user-select: none; }
 .strip b { background: #3a332b; }
 .tile.sel .dur { left: 28px; }
 .dur { position: absolute; left: 6px; top: 4px; font-family: var(--mono); font-size: 11px; font-weight: 500; color: #fff; text-shadow: 0 1px 2px rgb(0 0 0 / 0.7); pointer-events: none; }
@@ -237,7 +237,7 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
 </div>
 
 <header class="top gut">
-  <div class="brand">Splice<b>/</b><small class="ver">v8</small></div>
+  <div class="brand">Splice<b>/</b><small class="ver">v9</small></div>
   <button class="icon-btn" id="undoBtn" type="button" aria-label="Undo" disabled><svg><use href="#i-undo"/></svg></button>
   <button class="icon-btn" id="redoBtn" type="button" aria-label="Redo" disabled><svg><use href="#i-redo"/></svg></button>
   <button class="save" id="exportBtn" type="button" disabled>Save</button>
@@ -529,7 +529,7 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
 
   /* ---------- rendering ---------- */
   let tlQueued = false;
-  function scheduleTimeline() { if (tlQueued) return; tlQueued = true; requestAnimationFrame(() => { tlQueued = false; if (trim || (drag && drag.active)) { tlQueued = false; return; } renderTimeline(); }); }
+  function scheduleTimeline() { if (tlQueued) return; tlQueued = true; requestAnimationFrame(() => { tlQueued = false; if (trim || drag) { tlQueued = false; setTimeout(scheduleTimeline, 250); return; } renderTimeline(); }); }
 
   function renderRuler(tot, P) {
     const steps = [1, 2, 5, 10, 15, 30, 60, 120];
@@ -977,9 +977,15 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
     if (drag.x < 50) tl.scrollLeft -= 8; else if (drag.x > w - 50) tl.scrollLeft += 8;
     autoRaf = requestAnimationFrame(autoScroll);
   }
+  function clearDragUI() {
+    if (ghost) ghost.remove(); ghost = null;
+    if (dropEl) dropEl.remove(); dropEl = null;
+    document.querySelectorAll('.ghost').forEach(g => g.remove()); // belt and braces
+    clipsEl.querySelectorAll('.tile.lift').forEach(t => t.classList.remove('lift'));
+  }
   function dragEnd() {
     clearTimeout(holdTimer); cancelAnimationFrame(autoRaf);
-    if (!drag) return;
+    if (!drag) { if (ghost) clearDragUI(); return; }
     if (drag.active) {
       suppressClick = true; setTimeout(() => suppressClick = false, 400);
       if (drag.dropIdx !== drag.from) {
@@ -987,23 +993,40 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
         const [m] = clips.splice(drag.from, 1); clips.splice(drag.dropIdx, 0, m);
         sel = m.id; T = startOf(drag.dropIdx) + 0.01;
       }
-      ghost && ghost.remove(); ghost = null; dropEl = null; drag = null; renderAll();
+      clearDragUI(); drag = null; renderAll();
     } else drag = null;
   }
-  clipsEl.addEventListener('touchstart', e => {
-    if (e.touches.length !== 1) return;
-    const tile = e.target.closest('.tile'); if (!tile || e.target.closest('.hd')) return;
-    dragStart(e.touches[0].clientX, e.touches[0].clientY, tile);
-  }, { passive: true });
-  window.addEventListener('touchmove', e => {
+  let lastTouch = 0;
+  function onTouchMove(e) {
+    if (e.__splice) return; e.__splice = true; // handled once, whether it reached the tile or the window
     if (pinch && e.touches.length === 2) { e.preventDefault(); doPinch(e); return; }
     if (!drag) return;
     const t = e.touches[0];
     if (dragMove(t.clientX, t.clientY)) e.preventDefault();
-  }, { passive: false });
-  window.addEventListener('touchend', () => { dragEnd(); if (pinch) endPinch(); });
-  window.addEventListener('touchcancel', () => { dragEnd(); if (pinch) endPinch(); });
-  clipsEl.addEventListener('mousedown', e => { const tile = e.target.closest('.tile'); if (!tile || e.target.closest('.hd')) return; dragStart(e.clientX, e.clientY, tile); });
+  }
+  function onTouchEnd(e) {
+    if (e.__splice) return; e.__splice = true; lastTouch = Date.now();
+    if (e.touches && e.touches.length) return; // another finger is still down
+    dragEnd(); if (pinch) endPinch();
+  }
+  clipsEl.addEventListener('touchstart', e => {
+    lastTouch = Date.now();
+    if (ghost && !drag) clearDragUI();
+    if (e.touches.length !== 1) return;
+    const tile = e.target.closest('.tile'); if (!tile || e.target.closest('.hd')) return;
+    const tgt = e.target;
+    tgt.addEventListener('touchmove', onTouchMove, { passive: false });
+    const done = ev => { onTouchEnd(ev); tgt.removeEventListener('touchmove', onTouchMove); tgt.removeEventListener('touchend', done); tgt.removeEventListener('touchcancel', done); };
+    tgt.addEventListener('touchend', done); tgt.addEventListener('touchcancel', done);
+    dragStart(e.touches[0].clientX, e.touches[0].clientY, tile);
+  }, { passive: true });
+  window.addEventListener('touchmove', onTouchMove, { passive: false });
+  window.addEventListener('touchend', onTouchEnd);
+  window.addEventListener('touchcancel', onTouchEnd);
+  // Safety net: leaving the app mid-drag never leaves a floating preview behind
+  document.addEventListener('visibilitychange', () => { if (document.hidden && (drag || ghost)) { clearTimeout(holdTimer); drag = null; clearDragUI(); renderTimeline(); } });
+  window.addEventListener('blur', () => { if (ghost) { clearTimeout(holdTimer); drag = null; clearDragUI(); renderTimeline(); } });
+  clipsEl.addEventListener('mousedown', e => { if (Date.now() - lastTouch < 800) return; /* iOS sends fake mouse events after touches */ const tile = e.target.closest('.tile'); if (!tile || e.target.closest('.hd')) return; dragStart(e.clientX, e.clientY, tile); });
   window.addEventListener('mousemove', e => { if (drag) dragMove(e.clientX, e.clientY); });
   window.addEventListener('mouseup', dragEnd);
 
@@ -1408,7 +1431,7 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
   window.addEventListener('unhandledrejection', e => { const m = e.reason && (e.reason.message || e.reason.name); if (m) { hint.textContent = 'Something broke: ' + m; hint.classList.add('err'); } });
 
   // Read-only view of the edit, used by the test script
-  window.__splice = { saveNow: () => saveNow(), get missing() { return missingSources().map(s => s.name); }, get canvas() { return canvasChoice; }, get clips() { return clips.map(c => ({ name: sources.get(c.src).name, in: +c.in.toFixed(2), out: +c.out.toFixed(2), tr: c.tr.type, date: sources.get(c.src).date ? sources.get(c.src).date.toString() : null })); }, get stamp() { return stamp; }, get sel() { return clips.findIndex(c => c.id === sel); }, get T() { return T; }, get PPS() { return PPS; } };
+  window.__splice = { rerender: () => renderTimeline(), saveNow: () => saveNow(), get missing() { return missingSources().map(s => s.name); }, get canvas() { return canvasChoice; }, get clips() { return clips.map(c => ({ name: sources.get(c.src).name, in: +c.in.toFixed(2), out: +c.out.toFixed(2), tr: c.tr.type, date: sources.get(c.src).date ? sources.get(c.src).date.toString() : null })); }, get stamp() { return stamp; }, get sel() { return clips.findIndex(c => c.id === sel); }, get T() { return T; }, get PPS() { return PPS; } };
 
 })();
 </script>
