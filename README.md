@@ -15,8 +15,8 @@ A small video editor for your phone. Trim clips, put them in order, and stitch t
 - **Add** clips from your camera roll (several at once is fine).
 - **Scrub** by swiping the filmstrip; the line in the middle is the playhead. Pinch the strip to zoom.
 - **Trim**: tap a clip, then drag the blue handles at either end.
-- **Move**: hold a clip and drag it, or use the Move ← / → buttons.
-- **Split** cuts the clip under the playhead. **Duplicate** and **Delete** act on the selected clip.
+- **Move**: hold a clip and drag it, or use the Earlier / Later buttons.
+- **Split** cuts the clip under the playhead. **Copy** and **Delete** act on the selected clip.
 - **Canvas** sets the frame shape: original, 9:16, 1:1 or 16:9. Clips that don't match get bars, never cropped.
 - **Save** joins the clips into one MP4. On iPhone, choose **Save Video** in the share sheet to put it in Photos.
 
