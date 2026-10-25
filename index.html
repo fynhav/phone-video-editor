@@ -68,7 +68,12 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
 .frame { position: relative; background: var(--frame); border-radius: 6px; overflow: hidden; box-shadow: 0 6px 24px rgb(43 38 32 / 0.18); }
 .frame video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; opacity: 0; }
 .frame video.on { opacity: 1; }
-.frame canvas { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 1; display: block; }
+.frame video { will-change: filter; }
+#xf { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; z-index: 2; opacity: 0; pointer-events: none; }
+#dip { position: absolute; inset: 0; z-index: 3; opacity: 0; background: #000; pointer-events: none; }
+#stampEl { position: absolute; z-index: 4; white-space: pre; line-height: 1; pointer-events: none; text-shadow: 0 0.04em 0.25em rgba(0,0,0,0.55); }
+#stampEl.retro { font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; font-weight: 500; color: #FFB23E; }
+#stampEl.clean { font-family: "Instrument Sans", system-ui, -apple-system, sans-serif; font-weight: 600; color: #fff; }
 .empty { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 24px; }
 .empty-in { display: flex; flex-direction: column; gap: 12px; align-items: center; max-width: 30ch; }
 .empty h2 { font-family: var(--display); font-size: 24px; margin: 0; text-wrap: balance; }
@@ -195,14 +200,14 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
 </svg>
 
 <header class="top gut">
-  <div class="brand">Splice<b>/</b><small class="ver">v5</small></div>
+  <div class="brand">Splice<b>/</b><small class="ver">v6</small></div>
   <button class="icon-btn" id="undoBtn" type="button" aria-label="Undo" disabled><svg><use href="#i-undo"/></svg></button>
   <button class="icon-btn" id="redoBtn" type="button" aria-label="Redo" disabled><svg><use href="#i-redo"/></svg></button>
   <button class="save" id="exportBtn" type="button" disabled>Save</button>
 </header>
 
 <main class="preview" id="preview">
-  <div class="frame" id="frame"><canvas id="view"></canvas></div>
+  <div class="frame" id="frame"><canvas id="xf"></canvas><div id="dip"></div><div id="stampEl" hidden></div></div>
   <div class="empty" id="empty">
     <div class="empty-in">
       <h2>Stitch clips together</h2>
@@ -347,7 +352,7 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
         const dur = vid.duration;
         if (!isFinite(dur) || !(dur > 0)) return;
         try { vid.pause(); if (vid.currentTime > 0.05) vid.currentTime = 0; } catch (e) {}
-        const n = clamp(Math.ceil(dur), 2, 30);
+        const n = clamp(Math.ceil(dur / 1.5), 2, 20);
         const s = { id: uid(), url, name: file.name, dur, w: vid.videoWidth || 1080, h: vid.videoHeight || 1920, step: dur / n, thumbs: new Array(n).fill(null), vid };
         vid.addEventListener('resize', () => { if (vid.videoWidth) { s.w = vid.videoWidth; s.h = vid.videoHeight; fitFrame(); } });
         ['seeked', 'loadeddata', 'timeupdate'].forEach(ev => vid.addEventListener(ev, markDirty));
@@ -415,6 +420,7 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
       };
       const next = () => {
         if (k >= s.thumbs.length) return stop();
+        if (playing || exporting) { stepTimer = setTimeout(next, 400); return; } // don't fight playback for the decoder
         stepTimer = setTimeout(grab, 2500); // a seek that never lands just skips this frame
         try { p.currentTime = Math.min(s.dur - 0.05, k * s.step + 0.05); } catch (e) { grab(); }
       };
@@ -571,15 +577,15 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
     const r = Math.min(aw / w, ah / h);
     const fw = Math.max(40, w * r), fh = Math.max(40, h * r);
     frame.style.width = fw + 'px'; frame.style.height = fh + 'px';
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
-    view.width = Math.round(fw * dpr); view.height = Math.round(fh * dpr);
-    markDirty();
+    const fs = Math.max(8, Math.round(Math.min(fw, fh) * 0.048));
+    stampEl.style.fontSize = fs + 'px'; stampEl.style.left = stampEl.style.top = Math.round(fs * 0.8) + 'px';
+    frameH = fh; markDirty();
   }
   new ResizeObserver(() => { fitFrame(); renderTimeline(); setScroll(T); }).observe(preview);
 
   /* ---------- compositor: one renderer for preview and export ---------- */
-  const view = $('view'), vg = view.getContext('2d');
-  let dirty = true, viewAt = { i: 0, local: 0 };
+  const xf = $('xf'), dipEl = $('dip'), stampEl = $('stampEl');
+  let dirty = true, viewAt = { i: 0, local: 0 }, frameH = 400;
   function markDirty() { dirty = true; }
   const TR_NAMES = { cut: 'Cut', cross: 'Crossfade', black: 'Fade black', white: 'Fade white', blur: 'Blur' };
   const trLen = i => Math.max(0.1, Math.min(clips[i].tr.d, len(clips[i - 1]), len(clips[i])));
@@ -597,11 +603,11 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
   function ensureSnap(c) {
     const k = snapKey(c);
     if (snaps.has(k)) return snaps.get(k);
-    if (!snapWant.has(k)) { snapWant.set(k, c); pumpSnaps(); }
+    if (!snapWant.has(k)) { snapWant.set(k, c); if (!playing) pumpSnaps(); }
     return null;
   }
   function pumpSnaps() {
-    if (snapBusy || !snapWant.size) return;
+    if (snapBusy || !snapWant.size || playing || exporting) return;
     const [k, c] = snapWant.entries().next().value; snapBusy = true;
     const s = sources.get(c.src); if (!s) { snapWant.delete(k); snapBusy = false; return pumpSnaps(); }
     const v = quietVideo(s.url); mediaBox.appendChild(v);
@@ -617,7 +623,8 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
     const r = Math.min(W / sw, H / sh), dw = sw * r, dh = sh * r, x = (W - dw) / 2, y = (H - dh) / 2;
     if (blur > 0.02) {
       const f = 1 / (1 + 28 * blur);
-      blurCv.width = Math.max(2, Math.round(dw * f)); blurCv.height = Math.max(2, Math.round(dh * f));
+      const bw = Math.max(2, Math.round(dw * f)), bh = Math.max(2, Math.round(dh * f));
+      if (blurCv.width !== bw || blurCv.height !== bh) { blurCv.width = bw; blurCv.height = bh; } // only reallocate when the size changes
       bgx.imageSmoothingEnabled = true; bgx.imageSmoothingQuality = 'high';
       bgx.drawImage(src, 0, 0, blurCv.width, blurCv.height);
       g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
@@ -647,36 +654,67 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
     g.restore();
   }
 
-  // Draw clip i at `local` seconds into it (relative to its in-point)
-  function compose(g, W, H, i, local, vid) {
-    const c = clips[i]; if (!c) return;
-    const L = len(c);
-    g.globalAlpha = 1; g.fillStyle = '#000'; g.fillRect(0, 0, W, H);
-    let blur = 0, dip = null, dipA = 0, over = null, overA = 0;
+  // What the transitions are doing to clip i at `local` seconds into it
+  function trState(i, local) {
+    const c = clips[i], L = len(c);
+    const st = { blur: 0, dip: null, dipA: 0, over: null, overA: 0 };
     if (i > 0 && c.tr.type !== 'cut') {
       const d = trLen(i), t = c.tr.type;
-      if (t === 'cross' && local < d) { over = ensureSnap(clips[i - 1]); overA = 1 - local / d; }
-      else if ((t === 'black' || t === 'white') && local < d / 2) { dip = t; dipA = 1 - local / (d / 2); }
-      else if (t === 'blur' && local < d / 2) blur = 1 - local / (d / 2);
+      if (t === 'cross' && local < d) { st.over = clips[i - 1]; st.overA = 1 - local / d; }
+      else if ((t === 'black' || t === 'white') && local < d / 2) { st.dip = t; st.dipA = 1 - local / (d / 2); }
+      else if (t === 'blur' && local < d / 2) st.blur = 1 - local / (d / 2);
     }
     const nx = clips[i + 1];
     if (nx && nx.tr.type !== 'cut') {
       const d = trLen(i + 1), t = nx.tr.type, rem = L - local;
-      if ((t === 'black' || t === 'white') && rem < d / 2) { dip = t; dipA = Math.max(dipA, 1 - rem / (d / 2)); }
-      else if (t === 'blur' && rem < d / 2) blur = Math.max(blur, 1 - rem / (d / 2));
+      if ((t === 'black' || t === 'white') && rem < d / 2) { st.dip = t; st.dipA = Math.max(st.dipA, 1 - rem / (d / 2)); }
+      else if (t === 'blur' && rem < d / 2) st.blur = Math.max(st.blur, 1 - rem / (d / 2));
     }
+    st.dipA = clamp(st.dipA, 0, 1); st.overA = clamp(st.overA, 0, 1);
+    return st;
+  }
+
+  // Export: draw clip i at `local` seconds into it onto a canvas
+  function compose(g, W, H, i, local, vid) {
+    const c = clips[i]; if (!c) return;
+    const { blur, dip, dipA, over: overClip, overA } = trState(i, local);
+    const over = overClip ? snaps.get(snapKey(overClip)) : null;
+    g.globalAlpha = 1; g.fillStyle = '#000'; g.fillRect(0, 0, W, H);
     if (vid && vid.videoWidth && vid.readyState >= 2) { try { drawMedia(g, vid, vid.videoWidth, vid.videoHeight, W, H, blur); } catch (e) {} }
-    if (over && overA > 0) { g.globalAlpha = clamp(overA, 0, 1); drawMedia(g, over, over.width, over.height, W, H, 0); g.globalAlpha = 1; }
+    if (over && overA > 0) { g.globalAlpha = overA; drawMedia(g, over, over.width, over.height, W, H, 0); g.globalAlpha = 1; }
     if (dip) { g.globalAlpha = clamp(dipA, 0, 1); g.fillStyle = dip === 'white' ? '#fff' : '#000'; g.fillRect(0, 0, W, H); g.globalAlpha = 1; }
     drawStamp(g, W, H, c, local);
   }
 
-  (function previewLoop() {
-    if ((dirty || playing) && clips.length) {
-      dirty = false;
-      const c = clips[viewAt.i];
-      if (c) compose(vg, view.width, view.height, viewAt.i, viewAt.local, sources.get(c.src).vid);
+  // Preview: the <video> itself is shown (GPU-composited, no per-frame copying).
+  // Effects are cheap layers on top: CSS blur, a fade layer, a held frame, a text stamp.
+  let lastBlurPx = -1, blurVid = null, lastXf = '', lastXfA = -1, lastDip = '', lastStamp = null, lastStampStyle = '';
+  function updateOverlay() {
+    const c = clips[viewAt.i];
+    if (!c) { xf.style.opacity = 0; dipEl.style.opacity = 0; stampEl.hidden = true; return; }
+    const st = trState(viewAt.i, viewAt.local), vid = sources.get(c.src).vid;
+    const px = st.blur > 0.02 ? Math.round(st.blur * 0.05 * frameH) : 0;
+    if (blurVid !== vid) { if (blurVid) blurVid.style.filter = ''; blurVid = vid; lastBlurPx = -1; }
+    if (px !== lastBlurPx) { vid.style.filter = px ? `blur(${px}px)` : ''; lastBlurPx = px; }
+    let xa = 0;
+    if (st.over && st.overA > 0) {
+      const k = snapKey(st.over), sc = snaps.get(k);
+      if (sc) {
+        if (k !== lastXf) { xf.width = sc.width; xf.height = sc.height; xf.getContext('2d').drawImage(sc, 0, 0); lastXf = k; }
+        xa = Math.round(st.overA * 100) / 100;
+      } else if (!playing) ensureSnap(st.over);
     }
+    if (xa !== lastXfA) { xf.style.opacity = xa; lastXfA = xa; }
+    const dipKey = st.dip ? st.dip + (Math.round(st.dipA * 100) / 100) : '';
+    if (dipKey !== lastDip) { dipEl.style.background = st.dip === 'white' ? '#fff' : '#000'; dipEl.style.opacity = st.dip ? Math.round(st.dipA * 100) / 100 : 0; lastDip = dipKey; }
+    const txt = stampText(c, viewAt.local);
+    if (txt !== lastStamp) { stampEl.textContent = txt; stampEl.hidden = !txt; lastStamp = txt; }
+    if (stamp.style !== lastStampStyle) { stampEl.className = stamp.style; lastStampStyle = stamp.style; }
+  }
+  // Make sure crossfade frames exist before they are needed, while nothing is playing
+  function prepareSnaps() { if (playing) return; clips.forEach((c, i) => { if (i > 0 && c.tr.type === 'cross') ensureSnap(clips[i - 1]); }); }
+  (function previewLoop() {
+    if (dirty || playing) { dirty = false; updateOverlay(); }
     requestAnimationFrame(previewLoop);
   })();
 
@@ -709,7 +747,7 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
   }, { passive: true });
 
   /* ---------- playback ---------- */
-  let unlocked = false, playIdx = 0, stopAt = null;
+  let unlocked = false, playIdx = 0, stopAt = null, lastTn = '', preSeeked = null;
   function unlockAll() {
     if (unlocked) return; unlocked = true;
     for (const s of sources.values()) { if (s.vid === activeVid) continue; const v = s.vid; v.muted = false; const p = v.play(); if (p) p.then(() => v.pause()).catch(() => {}); }
@@ -727,7 +765,7 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
   async function playClip(i, from) {
     const c = clips[i], s = sources.get(c.src);
     activate(s.vid); s.vid.muted = false;
-    try { s.vid.currentTime = from; } catch (e) {}
+    if (Math.abs(s.vid.currentTime - from) > 0.05) { try { s.vid.currentTime = from; } catch (e) {} }
     try { await s.vid.play(); } catch (e) { s.vid.muted = true; try { await s.vid.play(); } catch (_) { stopPlay(); } }
   }
   function tick() {
@@ -737,7 +775,15 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
     const local = s.vid.currentTime - c.in;
     T = startOf(playIdx) + clamp(local, 0, len(c));
     viewAt = { i: playIdx, local: clamp(local, 0, len(c)) };
-    setScroll(T); $('tNow').textContent = fmt(T);
+    if (Math.abs(Math.round(T * PPS) - progScroll) >= 1) setScroll(T);
+    const tn = fmt(T); if (tn !== lastTn) { $('tNow').textContent = tn; lastTn = tn; }
+    // Seek the next clip's video ahead of time so the cut doesn't stall
+    const nx = clips[playIdx + 1];
+    if (nx && c.out - s.vid.currentTime < 1.2 && preSeeked !== nx.id) {
+      const nv = sources.get(nx.src).vid;
+      if (nv !== s.vid) { try { nv.currentTime = nx.in; } catch (e) {} }
+      preSeeked = nx.id;
+    }
     if (stopAt != null && T >= stopAt) { stopPlay(); return; }
     if (s.vid.currentTime >= c.out - 0.04 || s.vid.ended) {
       captureSnap(c, s.vid);
@@ -747,7 +793,7 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
     }
     requestAnimationFrame(tick);
   }
-  function stopPlay() { playing = false; stopAt = null; markDirty(); if (activeVid) activeVid.pause(); setPlayIcon(); updateTools(); }
+  function stopPlay() { playing = false; stopAt = null; preSeeked = null; markDirty(); setTimeout(() => { pumpSnaps(); prepareSnaps(); }, 50); if (activeVid) activeVid.pause(); setPlayIcon(); updateTools(); }
   $('playBtn').onclick = () => playing ? stopPlay() : startPlay();
 
   /* ---------- selecting, trimming, reordering ---------- */
@@ -792,7 +838,7 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
     if (!trim) return;
     const changed = trim.c.in !== trim.in0 || trim.c.out !== trim.out0;
     if (changed) { undoStack.push(trim.before); redoStack = []; syncHist(); }
-    trim = null; T = clamp(tl.scrollLeft / PPS, 0, total()); renderAll();
+    trim = null; T = clamp(tl.scrollLeft / PPS, 0, total()); renderAll(); prepareSnaps();
   };
   window.addEventListener('pointerup', endTrim); window.addEventListener('pointercancel', endTrim);
 
@@ -943,13 +989,13 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
     if (playing) stopPlay();
     trIdx = i; trCommitted = false; renderTrOpts(); $('trSheet').hidden = false;
   }
-  function trChange(fn) { if (!trCommitted) { commit(); trCommitted = true; } fn(); renderTrOpts(); renderTimeline(); markDirty(); }
+  function trChange(fn) { if (!trCommitted) { commit(); trCommitted = true; } fn(); renderTrOpts(); renderTimeline(); markDirty(); prepareSnaps(); }
   function previewCut(i) {
     if (playing) stopPlay();
     const at = startOf(i), d = clips[i].tr.type === 'cut' ? 0.6 : trLen(i);
     T = Math.max(0, at - Math.max(0.9, d)); stopAt = Math.min(total(), at + Math.max(0.9, d));
     setScroll(T); showFrame(T);
-    startPlay().then(() => { stopAt = Math.min(total(), at + Math.max(0.9, d)); });
+    startPlay(); // stopAt is cleared by stopPlay(), so it can't leak into the next play
   }
   $('trOpts').onclick = e => {
     const b = e.target.closest('.opt'); if (!b) return;
@@ -1051,11 +1097,18 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
     const tot = total() || 1; let done = 0, drawing = true, curI = 0;
     try { if (document.fonts) await document.fonts.ready; } catch (e) {}
 
+    const useVFC = 'requestVideoFrameCallback' in HTMLVideoElement.prototype;
+    let gen = 0;
     const draw = () => {
-      if (!drawing) return;
-      const c = clips[curI];
-      if (c) compose(g, W, H, curI, clamp(stage.currentTime - c.in, 0, len(c)), stage);
-      requestAnimationFrame(draw);
+      const my = ++gen; // one live draw loop at a time
+      const frameCb = (now, meta) => {
+        if (!drawing || my !== gen) return;
+        const c = clips[curI];
+        const t = meta && meta.mediaTime != null ? meta.mediaTime : stage.currentTime;
+        if (c) compose(g, W, H, curI, clamp(t - c.in, 0, len(c)), stage);
+        if (useVFC) stage.requestVideoFrameCallback(frameCb); else requestAnimationFrame(frameCb);
+      };
+      frameCb();
     };
 
     try {
@@ -1073,7 +1126,7 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
         await stage.play();
         await new Promise(r => setTimeout(r, 50));
         curI = i;
-        if (i === 0) { draw(); rec.start(1000); } else if (rec.state === 'paused') rec.resume();
+        if (i === 0) { draw(); rec.start(1000); } else { draw(); if (rec.state === 'paused') rec.resume(); }
         await new Promise(r => {
           const watch = () => {
             if (job.cancelled) return r();
