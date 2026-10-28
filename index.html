@@ -72,8 +72,7 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
 .frame { position: relative; background: var(--frame); border-radius: 6px; overflow: hidden; outline: 1px solid var(--rule); box-shadow: 0 6px 24px rgb(var(--shade) / 0.18); }
 .frame video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; opacity: 0; }
 .frame video.on { opacity: 1; }
-.frame video { will-change: filter; }
-#xf { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; z-index: 2; opacity: 0; pointer-events: none; }
+#xf, #bf { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; z-index: 2; opacity: 0; pointer-events: none; }
 #dip { position: absolute; inset: 0; z-index: 3; opacity: 0; background: #000; pointer-events: none; }
 #stampEl { position: absolute; z-index: 4; white-space: pre; line-height: 1; pointer-events: none; text-shadow: 0 0.04em 0.25em rgba(0,0,0,0.55); }
 #stampEl.retro { font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; font-weight: 500; color: #FFB23E; }
@@ -241,14 +240,14 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
 </div>
 
 <header class="top gut">
-  <div class="brand">Splice<b>/</b><small class="ver">v10</small></div>
+  <div class="brand">Splice<b>/</b><small class="ver">v11</small></div>
   <button class="icon-btn" id="undoBtn" type="button" aria-label="Undo" disabled><svg><use href="#i-undo"/></svg></button>
   <button class="icon-btn" id="redoBtn" type="button" aria-label="Redo" disabled><svg><use href="#i-redo"/></svg></button>
   <button class="save" id="exportBtn" type="button" disabled>Save</button>
 </header>
 
 <main class="preview" id="preview">
-  <div class="frame" id="frame"><canvas id="xf"></canvas><div id="dip"></div><div id="stampEl" hidden></div></div>
+  <div class="frame" id="frame"><canvas id="xf"></canvas><canvas id="bf"></canvas><div id="dip"></div><div id="stampEl" hidden></div></div>
   <div class="relink" id="relink" hidden>
     <div class="relink-card">
       <h2 id="rlTitle">Pick up where you left off</h2>
@@ -604,6 +603,7 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
     $('exportBtn').disabled = !has || missing.length > 0; $('playBtn').disabled = !has || missing.length > 0;
     renderRelink(missing);
     scheduleSave();
+    if (!missing.length) prepareSnaps();
     if (sel && !clips.find(c => c.id === sel)) sel = null;
     T = clamp(T, 0, total());
     renderTimeline();
@@ -656,46 +656,105 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
   const TR_NAMES = { cut: 'Cut', cross: 'Crossfade', black: 'Fade black', white: 'Fade white', blur: 'Blur' };
   const trLen = i => Math.max(0.1, Math.min(clips[i].tr.d, len(clips[i - 1]), len(clips[i])));
 
-  // Last frame of a clip, used for crossfades
-  const snaps = new Map();
-  const snapKey = c => c.src + '@' + c.out.toFixed(2);
-  function captureSnap(c, vid) {
-    if (!vid || !vid.videoWidth) return;
+  // Still frames at clip edges: the last frame (crossfade, blur out) and first frame (blur in).
+  // Captured once in the background, never during playback.
+  const snaps = new Map(), blurred = new Map();
+  const edgeKey = (c, edge) => c.src + '@' + (edge === 'end' ? 'e' + c.out.toFixed(2) : 's' + c.in.toFixed(2));
+  const snapKey = c => edgeKey(c, 'end');
+  const edgeTime = (c, edge) => edge === 'end' ? Math.max(c.in, c.out - 0.05) : Math.min(c.out, c.in + 0.02);
+  function grabFrame(vid) {
     const r = Math.min(1, 960 / Math.max(vid.videoWidth, vid.videoHeight));
     const cv = document.createElement('canvas'); cv.width = Math.round(vid.videoWidth * r); cv.height = Math.round(vid.videoHeight * r);
-    try { cv.getContext('2d').drawImage(vid, 0, 0, cv.width, cv.height); snaps.set(snapKey(c), cv); } catch (e) {}
+    cv.getContext('2d').drawImage(vid, 0, 0, cv.width, cv.height);
+    return cv;
+  }
+  function captureSnap(c, vid, edge = 'end') {
+    if (!vid || !vid.videoWidth) return;
+    try { snaps.set(edgeKey(c, edge), grabFrame(vid)); } catch (e) {}
   }
   let snapBusy = false; const snapWant = new Map();
-  function ensureSnap(c) {
-    const k = snapKey(c);
+  function ensureEdge(c, edge) {
+    const k = edgeKey(c, edge);
     if (snaps.has(k)) return snaps.get(k);
-    if (!snapWant.has(k)) { snapWant.set(k, c); if (!playing) pumpSnaps(); }
+    if (!snapWant.has(k)) { snapWant.set(k, { c, edge }); if (!playing) pumpSnaps(); }
     return null;
   }
+  const ensureSnap = c => ensureEdge(c, 'end');
   function pumpSnaps() {
     if (snapBusy || !snapWant.size || playing || exporting) return;
-    const [k, c] = snapWant.entries().next().value; snapBusy = true;
+    const [k, job] = snapWant.entries().next().value, { c, edge } = job; snapBusy = true;
     const s = sources.get(c.src); if (!s || !s.url) { snapWant.delete(k); snapBusy = false; return pumpSnaps(); }
     const v = quietVideo(s.url); mediaBox.appendChild(v);
-    const end = () => { clearTimeout(t); snapWant.delete(k); v.remove(); snapBusy = false; markDirty(); pumpSnaps(); };
-    const t = setTimeout(end, 6000);
-    v.addEventListener('loadeddata', () => { v.currentTime = Math.max(c.in, c.out - 0.05); }, { once: true });
-    v.addEventListener('seeked', () => { captureSnap(c, v); end(); }, { once: true });
+    const end = ok => {
+      clearTimeout(t); v.remove(); snapBusy = false;
+      job.tries = (job.tries || 0) + 1;
+      if (ok || job.tries >= 3) snapWant.delete(k); else { snapWant.delete(k); snapWant.set(k, job); } // retry slow ones at the back of the queue
+      markDirty(); pumpSnaps();
+    };
+    const t = setTimeout(() => end(false), 12000);
+    v.addEventListener('loadeddata', () => { v.currentTime = edgeTime(c, edge); }, { once: true });
+    v.addEventListener('seeked', () => { captureSnap(c, v, edge); blurredEdge(c, edge); end(true); }, { once: true });
     v.load(); setTimeout(() => nudge(v), 700);
   }
 
-  const blurCv = document.createElement('canvas'), bgx = blurCv.getContext('2d');
+  // Blur a still once, in JavaScript, at small size: three box-blur passes look like a Gaussian.
+  function boxBlur(px, w, h, r) {
+    const tmp = new Uint8ClampedArray(px.length);
+    const pass = (src, dst, len, lines, step, lineStep) => {
+      for (let l = 0; l < lines; l++) {
+        const base = l * lineStep;
+        for (let ch = 0; ch < 3; ch++) {
+          let acc = 0;
+          for (let k = -r; k <= r; k++) acc += src[base + clamp(k, 0, len - 1) * step + ch];
+          for (let x = 0; x < len; x++) {
+            dst[base + x * step + ch] = acc / (2 * r + 1);
+            acc += src[base + Math.min(len - 1, x + r + 1) * step + ch] - src[base + Math.max(0, x - r) * step + ch];
+          }
+        }
+      }
+    };
+    for (let i = 0; i < 3; i++) { pass(px, tmp, w, h, 4, w * 4); pass(tmp, px, h, w, w * 4, 4); }
+  }
+  function blurredEdge(c, edge) {
+    const k = edgeKey(c, edge);
+    if (blurred.has(k)) return blurred.get(k);
+    const src = ensureEdge(c, edge); if (!src) return null;
+    const sc = Math.min(1, 320 / Math.max(src.width, src.height));
+    const cv = document.createElement('canvas'); cv.width = Math.max(2, Math.round(src.width * sc)); cv.height = Math.max(2, Math.round(src.height * sc));
+    const g = cv.getContext('2d');
+    try {
+      g.drawImage(src, 0, 0, cv.width, cv.height);
+      const im = g.getImageData(0, 0, cv.width, cv.height);
+      boxBlur(im.data, cv.width, cv.height, Math.max(2, Math.round(Math.max(cv.width, cv.height) * 0.03)));
+      for (let i = 3; i < im.data.length; i += 4) im.data[i] = 255;
+      g.putImageData(im, 0, 0);
+    } catch (e) { return null; }
+    blurred.set(k, cv);
+    return cv;
+  }
+
+  // Small fixed buffers at 1/4, 1/8, 1/16, 1/32 size. Stepping down and back up in 2x steps
+  // gives a smooth blur for a few cheap draws; one big jump would look blocky.
+  const pyr = [4, 8, 16, 32].map(div => { const c = document.createElement('canvas'); const g = c.getContext('2d'); return { div, c, g }; });
+  const smooth = x => x * x * (3 - 2 * x);
   function drawMedia(g, src, sw, sh, W, H, blur) {
     const r = Math.min(W / sw, H / sh), dw = sw * r, dh = sh * r, x = (W - dw) / 2, y = (H - dh) / 2;
+    g.imageSmoothingEnabled = true;
+    g.drawImage(src, x, y, dw, dh);
     if (blur > 0.02) {
-      const f = 1 / (1 + 28 * blur);
-      const bw = Math.max(2, Math.round(dw * f)), bh = Math.max(2, Math.round(dh * f));
-      if (blurCv.width !== bw || blurCv.height !== bh) { blurCv.width = bw; blurCv.height = bh; } // only reallocate when the size changes
-      bgx.imageSmoothingEnabled = true; bgx.imageSmoothingQuality = 'high';
-      bgx.drawImage(src, 0, 0, blurCv.width, blurCv.height);
-      g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
-      g.drawImage(blurCv, x, y, dw, dh);
-    } else g.drawImage(src, x, y, dw, dh);
+      for (const L of pyr) {
+        const w = Math.max(2, Math.round(dw / L.div)), h = Math.max(2, Math.round(dh / L.div));
+        if (L.c.width !== w || L.c.height !== h) { L.c.width = w; L.c.height = h; }
+        L.g.imageSmoothingEnabled = true; L.g.imageSmoothingQuality = 'high';
+      }
+      pyr[0].g.drawImage(src, 0, 0, pyr[0].c.width, pyr[0].c.height);
+      for (let k = 1; k < pyr.length; k++) pyr[k].g.drawImage(pyr[k - 1].c, 0, 0, pyr[k].c.width, pyr[k].c.height);
+      for (let k = pyr.length - 2; k >= 0; k--) pyr[k].g.drawImage(pyr[k + 1].c, 0, 0, pyr[k].c.width, pyr[k].c.height);
+      const a = g.globalAlpha; g.globalAlpha = a * smooth(Math.min(1, blur));
+      g.imageSmoothingQuality = 'high';
+      g.drawImage(pyr[0].c, x, y, dw, dh);
+      g.globalAlpha = a;
+    }
   }
 
   const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -728,13 +787,13 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
       const d = trLen(i), t = c.tr.type;
       if (t === 'cross' && local < d) { st.over = clips[i - 1]; st.overA = 1 - local / d; }
       else if ((t === 'black' || t === 'white') && local < d / 2) { st.dip = t; st.dipA = 1 - local / (d / 2); }
-      else if (t === 'blur' && local < d / 2) st.blur = 1 - local / (d / 2);
+      else if (t === 'blur' && local < d / 2) { st.blur = 1 - local / (d / 2); st.blurEdge = 'start'; }
     }
     const nx = clips[i + 1];
     if (nx && nx.tr.type !== 'cut') {
       const d = trLen(i + 1), t = nx.tr.type, rem = L - local;
       if ((t === 'black' || t === 'white') && rem < d / 2) { st.dip = t; st.dipA = Math.max(st.dipA, 1 - rem / (d / 2)); }
-      else if (t === 'blur' && rem < d / 2) st.blur = Math.max(st.blur, 1 - rem / (d / 2));
+      else if (t === 'blur' && rem < d / 2) { const b = 1 - rem / (d / 2); if (b > st.blur) { st.blur = b; st.blurEdge = 'end'; } }
     }
     st.dipA = clamp(st.dipA, 0, 1); st.overA = clamp(st.overA, 0, 1);
     return st;
@@ -753,16 +812,24 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
   }
 
   // Preview: the <video> itself is shown (GPU-composited, no per-frame copying).
-  // Effects are cheap layers on top: CSS blur, a fade layer, a held frame, a text stamp.
-  let lastBlurPx = -1, blurVid = null, lastXf = '', lastXfA = -1, lastDip = '', lastStamp = null, lastStampStyle = '';
+  // Effects are cheap layers on top whose opacity changes: a pre-blurred still, a fade layer,
+  // a held frame, a text stamp. Nothing is filtered or redrawn per frame, which iPhones handle easily.
+  const bf = $('bf');
+  let lastBf = '', lastBfA = -1, lastXf = '', lastXfA = -1, lastDip = '', lastStamp = null, lastStampStyle = '';
   function updateOverlay() {
     const c = clips[viewAt.i];
     if (!c) { xf.style.opacity = 0; dipEl.style.opacity = 0; stampEl.hidden = true; return; }
     const st = trState(viewAt.i, viewAt.local), vid = sources.get(c.src).vid;
     if (!vid) return;
-    const px = st.blur > 0.02 ? Math.round(st.blur * 0.05 * frameH) : 0;
-    if (blurVid !== vid) { if (blurVid) blurVid.style.filter = ''; blurVid = vid; lastBlurPx = -1; }
-    if (px !== lastBlurPx) { vid.style.filter = px ? `blur(${px}px)` : ''; lastBlurPx = px; }
+    let ba = 0;
+    if (st.blur > 0.02) {
+      const k = edgeKey(c, st.blurEdge), bc = blurredEdge(c, st.blurEdge);
+      if (bc) {
+        if (k !== lastBf) { bf.width = bc.width; bf.height = bc.height; bf.getContext('2d').drawImage(bc, 0, 0); lastBf = k; }
+        ba = Math.round(smooth(st.blur) * 100) / 100;
+      }
+    }
+    if (ba !== lastBfA) { bf.style.opacity = ba; lastBfA = ba; }
     let xa = 0;
     if (st.over && st.overA > 0) {
       const k = snapKey(st.over), sc = snaps.get(k);
@@ -779,7 +846,14 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
     if (stamp.style !== lastStampStyle) { stampEl.className = stamp.style; lastStampStyle = stamp.style; }
   }
   // Make sure crossfade frames exist before they are needed, while nothing is playing
-  function prepareSnaps() { if (playing) return; clips.forEach((c, i) => { if (i > 0 && c.tr.type === 'cross') ensureSnap(clips[i - 1]); }); }
+  function prepareSnaps() {
+    if (playing) return;
+    clips.forEach((c, i) => {
+      if (i === 0) return;
+      if (c.tr.type === 'cross') ensureSnap(clips[i - 1]);
+      if (c.tr.type === 'blur') { ensureEdge(clips[i - 1], 'end'); ensureEdge(c, 'start'); }
+    });
+  }
   (function previewLoop() {
     if (dirty || playing) { dirty = false; updateOverlay(); }
     requestAnimationFrame(previewLoop);
@@ -841,7 +915,7 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
   function unlockAll() {
     if (unlocked) return; unlocked = true;
     if (!soundOn) { unlocked = false; return; } // muted videos never take over the phone's audio
-    for (const s of sources.values()) { if (!s.vid || s.vid === activeVid) continue; const v = s.vid; v.muted = false; const p = v.play(); if (p) p.then(() => v.pause()).catch(() => {}); }
+    for (const s of sources.values()) { if (!s.vid || s.vid === activeVid) continue; const v = s.vid; v.muted = false; const p = v.play(); v.pause(); if (p) p.catch(() => {}); } // play()+pause() in the same tap unlocks sound without decoding
   }
   function setPlayIcon() { $('playIcon').setAttribute('href', playing ? '#i-pause' : '#i-play'); $('playBtn').setAttribute('aria-label', playing ? 'Pause' : 'Play'); }
   async function startPlay() {
@@ -877,8 +951,7 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
     }
     if (stopAt != null && T >= stopAt) { stopPlay(); return; }
     if (s.vid.currentTime >= c.out - 0.04 || s.vid.ended) {
-      captureSnap(c, s.vid);
-      s.vid.pause(); playIdx++;
+      s.vid.pause(); playIdx++; // edge frames are prepared beforehand, never grabbed mid-playback
       if (playIdx >= clips.length) { T = total(); stopPlay(); return; }
       playClip(playIdx, clips[playIdx].in);
     }
@@ -1435,7 +1508,7 @@ button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
   window.addEventListener('unhandledrejection', e => { const m = e.reason && (e.reason.message || e.reason.name); if (m) { hint.textContent = 'Something broke: ' + m; hint.classList.add('err'); } });
 
   // Read-only view of the edit, used by the test script
-  window.__splice = { rerender: () => renderTimeline(), saveNow: () => saveNow(), get missing() { return missingSources().map(s => s.name); }, get canvas() { return canvasChoice; }, get clips() { return clips.map(c => ({ name: sources.get(c.src).name, in: +c.in.toFixed(2), out: +c.out.toFixed(2), tr: c.tr.type, date: sources.get(c.src).date ? sources.get(c.src).date.toString() : null })); }, get stamp() { return stamp; }, get sel() { return clips.findIndex(c => c.id === sel); }, get T() { return T; }, get PPS() { return PPS; } };
+  window.__splice = { get stills() { return { frames: [...snaps.keys()], blurred: [...blurred.keys()] }; }, get bfOpacity() { return +bf.style.opacity || 0; }, get filtered() { return [...document.querySelectorAll('#frame video')].filter(v => v.style.filter && v.style.filter !== 'none').length; }, rerender: () => renderTimeline(), saveNow: () => saveNow(), get missing() { return missingSources().map(s => s.name); }, get canvas() { return canvasChoice; }, get clips() { return clips.map(c => ({ name: sources.get(c.src).name, in: +c.in.toFixed(2), out: +c.out.toFixed(2), tr: c.tr.type, date: sources.get(c.src).date ? sources.get(c.src).date.toString() : null })); }, get stamp() { return stamp; }, get sel() { return clips.findIndex(c => c.id === sel); }, get T() { return T; }, get PPS() { return PPS; } };
 
 })();
 </script>
